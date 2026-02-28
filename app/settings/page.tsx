@@ -33,7 +33,9 @@ export default function SettingsPage() {
         if (!data.authenticated) { router.push("/login"); return; }
         setUser(data.user);
         setNewUsername(data.user.username);
-        setLoading(false);
+        setTimeout(() => {
+          setLoading(false);
+        }, 1500);
       })
       .catch(() => router.push("/login"));
   }, [router]);

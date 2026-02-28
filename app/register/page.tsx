@@ -36,7 +36,9 @@ export default function RegisterPage() {
     } catch {
       setError("Connection error, please try again");
     }
-    setLoading(false);
+    setTimeout(() => {
+      setLoading(false);
+    }, 1500);
   };
 
   return (

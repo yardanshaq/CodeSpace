@@ -75,7 +75,9 @@ export default function PostPage() {
         const u = data.user as User;
         setUser(u);
         setCachedUser(u);
-        setLoading(false);
+        setTimeout(() => {
+          setLoading(false);
+        }, 1500);
       })
       .catch(() => router.replace("/login"));
   }, []);
