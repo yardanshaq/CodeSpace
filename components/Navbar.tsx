@@ -16,12 +16,28 @@ export default function Navbar() {
   const router   = useRouter();
   const pathname = usePathname();
 
-  const [user, setUser]         = useState<NavUser | null>(() => getCachedUser());
+  // SSR-safe: selalu null dulu agar server & client render HTML yang sama.
+  // getCachedUser() tidak boleh dipakai sebagai initial state karena
+  // baca localStorage (tidak ada di server) → hydration mismatch.
+  const [user, setUser]         = useState<NavUser | null>(null);
   const [dropdownOpen, setOpen] = useState(false);
-  const [scrolled, setScrolled] = useState(false);
+  const [scrolled, setScrolled]   = useState(false);
+  const [logoAnim, setLogoAnim]   = useState(false);
+
+  // Trigger animasi logo sekali saat komponen pertama kali mount (setelah loading screen)
+  useEffect(() => {
+    const t = setTimeout(() => setLogoAnim(true), 100);
+    return () => clearTimeout(t);
+  }, []);
   const dropdownRef             = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // Baca cache dulu (client-only) untuk langsung render user tanpa loading
+    // Ini aman karena sudah di dalam useEffect — tidak mempengaruhi SSR
+    const cached = getCachedUser();
+    if (cached) setUser(cached);
+
+    // Verifikasi ke server di background
     fetch("/api/auth/me")
       .then(r => r.json())
       .then(d => {
@@ -98,6 +114,7 @@ export default function Navbar() {
               background: "var(--teal)", border: "2px solid var(--navbar-border)",
               boxShadow: `2px 2px 0 ${shadow0}`, display: "flex", alignItems: "center",
               justifyContent: "center", flexShrink: 0, transition: "all 0.3s",
+              animation: logoAnim ? "cs-logo-entrance 0.6s cubic-bezier(0.4,0,0.2,1) forwards" : "none",
             }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#000" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
@@ -274,6 +291,15 @@ export default function Navbar() {
           </div>
         </div>
       </nav>
+      <style>{`
+        @keyframes cs-logo-entrance {
+          0%   { transform: rotate(0deg)   scale(1);    }
+          30%  { transform: rotate(-20deg) scale(0.85); }
+          60%  { transform: rotate(12deg)  scale(1.1);  }
+          80%  { transform: rotate(-5deg)  scale(0.97); }
+          100% { transform: rotate(0deg)   scale(1);    }
+        }
+      `}</style>
     </>
   );
 }

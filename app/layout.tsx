@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { ThemeProvider } from "@/components/ThemeProvider";
-import DevToolsGuard from "@/components/DevToolsGuard";
 
 export const metadata: Metadata = {
   title: "CodeSpace",
@@ -20,26 +19,20 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    // suppressHydrationWarning: mencegah React error #418/#422
+    // karena blocking script mengubah data-theme di client sebelum hydration,
+    // yang menyebabkan mismatch antara server HTML dan client DOM.
+    <html lang="en" suppressHydrationWarning>
       <head>
         {/*
-          Script blocking ini dieksekusi SEBELUM browser render apapun.
-          Membaca localStorage dan langsung set data-theme di <html>,
-          sehingga tidak ada flash light mode saat reload di dark mode.
-          dangerouslySetInnerHTML diperlukan karena ini raw JS, bukan JSX.
+          Blocking script — jalan SEBELUM browser render apapun.
+          Baca localStorage dan set data-theme di <html> seketika,
+          sehingga Navbar langsung dapat tema yang benar dari frame pertama.
+          Default: "light" jika belum pernah pilih tema.
         */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `
-(function() {
-  try {
-    var stored = localStorage.getItem('theme');
-    var preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    var theme = stored || preferred;
-    document.documentElement.setAttribute('data-theme', theme);
-  } catch(e) {}
-})();
-            `.trim(),
+            __html: `(function(){try{var t=localStorage.getItem('theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}})();`,
           }}
         />
         <link rel="icon" type="image/x-icon" href="https://cdn.nekohime.site/file/sOyPp0Jp.png" />
@@ -47,11 +40,9 @@ export default function RootLayout({
         <link rel="icon" type="image/png" sizes="16x16" href="https://cdn.nekohime.site/file/R-r5NgoD.png" />
         <link rel="apple-touch-icon" sizes="180x180" href="https://cdn.nekohime.site/file/sOyPp0Jp.png" />
       </head>
-      <body>
+      <body suppressHydrationWarning>
         <ThemeProvider>
-          <DevToolsGuard>
-            {children}
-          </DevToolsGuard>
+          {children}
         </ThemeProvider>
       </body>
     </html>
