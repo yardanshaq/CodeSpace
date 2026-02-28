@@ -24,10 +24,20 @@ export default function Navbar() {
   const [scrolled, setScrolled]   = useState(false);
   const [logoAnim, setLogoAnim]   = useState(false);
 
-  // Trigger animasi logo sekali saat komponen pertama kali mount (setelah loading screen)
+  // Trigger animasi logo hanya setelah loading screen selesai (event dari PageLoader)
+  // Kalau tidak ada loading screen (navigasi langsung), fallback setelah 300ms
   useEffect(() => {
-    const t = setTimeout(() => setLogoAnim(true), 100);
-    return () => clearTimeout(t);
+    const trigger = () => setLogoAnim(true);
+    window.addEventListener("cs-loader-done", trigger, { once: true });
+    // Fallback: kalau halaman tidak pakai PageLoader, tetap animasi setelah 300ms
+    const fallback = setTimeout(() => {
+      setLogoAnim(true);
+      window.removeEventListener("cs-loader-done", trigger);
+    }, 300);
+    return () => {
+      clearTimeout(fallback);
+      window.removeEventListener("cs-loader-done", trigger);
+    };
   }, []);
   const dropdownRef             = useRef<HTMLDivElement>(null);
 

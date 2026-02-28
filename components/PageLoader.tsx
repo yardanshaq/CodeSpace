@@ -20,7 +20,12 @@ export default function PageLoader({ timeoutMs = 8000, label }: PageLoaderProps)
 
   useEffect(() => {
     const timer = setTimeout(() => setTimedOut(true), timeoutMs);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      // Dispatch event saat loading screen selesai (unmount)
+      // Navbar mendengarkan event ini untuk trigger animasi logo
+      window.dispatchEvent(new CustomEvent("cs-loader-done"));
+    };
   }, [timeoutMs]);
 
   return (
@@ -94,6 +99,16 @@ export default function PageLoader({ timeoutMs = 8000, label }: PageLoaderProps)
           </button>
         </div>
       )}
-</div>
+
+      <style>{`
+        @keyframes cs-loader-bounce {
+          0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+          40%            { transform: translateY(-10px); opacity: 1; }
+        }
+        [data-theme="dark"] .cs-loader-logo {
+          filter: invert(1);
+        }
+      `}</style>
+    </div>
   );
 }
