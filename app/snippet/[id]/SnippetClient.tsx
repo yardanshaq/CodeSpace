@@ -150,7 +150,32 @@ export default function SnippetClient({ id }: { id: string }) {
     hasTracked.current = true;
 
     fetchSnippet(false);
-    fetch(`/api/snippets/${id}`, { method: "PATCH" });
+
+    // Hanya tambah view jika user ini belum pernah buka snippet ini.
+    // Pakai visitor ID unik yang disimpan di localStorage — tidak perlu server/socket.
+    try {
+      const VISITOR_KEY = "cs_visitor_id";
+      const VIEWS_KEY   = "cs_viewed";
+
+      let visitorId = localStorage.getItem(VISITOR_KEY);
+      if (!visitorId) {
+        visitorId = Math.random().toString(36).slice(2) + Date.now().toString(36);
+        localStorage.setItem(VISITOR_KEY, visitorId);
+      }
+
+      const viewed  = new Set((localStorage.getItem(VIEWS_KEY) || "").split(",").filter(Boolean));
+      const viewKey = `${visitorId}:${id}`;
+
+      if (!viewed.has(viewKey)) {
+        viewed.add(viewKey);
+        localStorage.setItem(VIEWS_KEY, Array.from(viewed).join(","));
+        fetch(`/api/snippets/${id}`, { method: "PATCH" });
+      }
+    } catch {
+      // localStorage tidak tersedia (private mode ekstrem) — fallback tetap track
+      fetch(`/api/snippets/${id}`, { method: "PATCH" });
+    }
+
     pollRef.current = setInterval(() => fetchSnippet(true), 3000);
 
     // Safety timeout — kalau fetch hang, loading tetap dismiss setelah batas waktu
