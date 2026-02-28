@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Navbar from "@/components/Navbar";
 
@@ -13,6 +13,36 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  // Cek session saat mount — kalau masih valid redirect ke dashboard,
+  // kalau tidak valid cookie otomatis di-clear oleh /api/auth/me
+  const [checking, setChecking] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/auth/me");
+        const data = await res.json();
+        if (data.authenticated && data.user) {
+          // Session masih valid — redirect ke dashboard
+          const role = data.user.role;
+          if (callbackUrl) {
+            router.replace(callbackUrl);
+          } else if (role === "SUPERADMIN" || role === "ADMIN") {
+            router.replace("/post");
+          } else {
+            router.replace("/");
+          }
+          return;
+        }
+        // Session tidak valid — /api/auth/me sudah otomatis clear cookie-nya
+      } catch {
+        // Network error, lanjut tampilkan form
+      } finally {
+        setChecking(false);
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleLogin = async () => {
     if (!username || !password) { setError("Please fill in all fields"); return; }
@@ -43,6 +73,34 @@ function LoginForm() {
     }
     setLoading(false);
   };
+
+  // Tampilkan loading sementara cek session
+  if (checking) {
+    return (
+      <>
+        <Navbar />
+        <div className="login-page">
+          <div className="login-card" style={{ alignItems: "center", justifyContent: "center", minHeight: 200 }}>
+            <div style={{ display: "flex", gap: 8 }}>
+              {[0, 1, 2].map((i) => (
+                <span key={i} style={{
+                  width: 8, height: 8, borderRadius: "50%",
+                  background: "var(--teal)", display: "inline-block",
+                  animation: `bounce 1.2s ease-in-out ${i * 0.2}s infinite`,
+                }} />
+              ))}
+            </div>
+            <style>{`
+              @keyframes bounce {
+                0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+                40% { transform: translateY(-8px); opacity: 1; }
+              }
+            `}</style>
+          </div>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>

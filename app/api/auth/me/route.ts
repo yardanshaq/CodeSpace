@@ -1,26 +1,37 @@
 import { NextResponse } from "next/server";
-import { getSession, deleteSession, clearSessionCookie } from "@/lib/auth";
+import { getSession, deleteSession, clearSessionCookie, COOKIE_NAME } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 // GET — cek session saat ini
+// Jika session tidak valid / expired, otomatis clear cookie
+// sehingga browser tidak perlu hapus manual (fix untuk iPhone)
 export async function GET() {
   try {
     const session = await getSession();
+
     if (!session) {
-      return NextResponse.json({ authenticated: false }, { status: 200 });
+      // Session tidak ditemukan di DB (expired atau tidak valid)
+      // Clear cookie di browser supaya tidak stuck redirect terus
+      const response = NextResponse.json({ authenticated: false }, { status: 200 });
+      clearSessionCookie(response);
+      return response;
     }
+
     return NextResponse.json({
       authenticated: true,
       user: {
-        id: session.id,
+        id:       session.id,
         username: session.username,
-        role: session.role,
+        role:     session.role,
       },
     });
   } catch (error) {
     console.error(error);
-    return NextResponse.json({ authenticated: false }, { status: 200 });
+    // Kalau error (misal DB down), clear cookie juga supaya tidak loop
+    const response = NextResponse.json({ authenticated: false }, { status: 200 });
+    clearSessionCookie(response);
+    return response;
   }
 }
 

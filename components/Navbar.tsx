@@ -19,12 +19,7 @@ export default function Navbar() {
   const [user, setUser]         = useState<NavUser | null>(() => getCachedUser());
   const [dropdownOpen, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-  // mounted mencegah hydration mismatch — semua nilai theme-dependent
-  // baru diterapkan setelah komponen mount di client.
-  const [mounted, setMounted]   = useState(false);
   const dropdownRef             = useRef<HTMLDivElement>(null);
-
-  useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -63,20 +58,20 @@ export default function Navbar() {
     router.refresh();
   };
 
-  // Sebelum mount: pakai nilai netral supaya server & client HTML identik.
-  // Setelah mount: pakai nilai yang sesuai tema yang aktif.
-  const isDark     = mounted ? theme === "dark" : false;
-  const roleColor  = user?.role === "SUPERADMIN" ? "#f5c542" : user?.role === "ADMIN" ? "#4ecdc4" : "#aaaaaa";
-  const shadow0    = "#000";
-  const borderCol  = mounted ? (isDark ? "rgba(255,255,255,0.22)" : "#000") : "#000";
-  const glassBg    = mounted ? (isDark ? "rgba(16,16,16,0.82)" : "rgba(242,242,242,0.86)") : "rgba(242,242,242,0.86)";
-  const dropBg     = mounted ? (isDark ? "#141414" : "#fff") : "#fff";
-  const hoverBg    = mounted ? (isDark ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.05)") : "rgba(0,0,0,0.05)";
-  const initials   = user ? user.username.slice(0, 2).toUpperCase() : "";
+  const isDark      = theme === "dark";
+  const roleColor   = user?.role === "SUPERADMIN" ? "#f5c542" : user?.role === "ADMIN" ? "#4ecdc4" : "#aaaaaa";
+  // Gunakan CSS variables — nilainya langsung benar dari frame pertama
+  // karena blocking script di layout.tsx sudah set data-theme sebelum render
+  const borderCol   = "var(--navbar-border)";
+  const shadow0     = "#000";
+  const glassBg     = "var(--navbar-bg)";
+  const dropBg      = "var(--navbar-drop-bg)";
+  const hoverBg     = "var(--navbar-hover-bg)";
+  const initials    = user ? user.username.slice(0, 2).toUpperCase() : "";
 
-  const pillW      = scrolled ? "min(640px, calc(100vw - 24px))" : "min(960px, calc(100vw - 32px))";
-  const pillH      = scrolled ? 46 : 56;
-  const pillTop    = scrolled ? 10 : 18;
+  const pillW   = scrolled ? "min(640px, calc(100vw - 24px))" : "min(960px, calc(100vw - 32px))";
+  const pillH   = scrolled ? 46 : 56;
+  const pillTop = scrolled ? 10 : 18;
   const pillShadow = scrolled ? `3px 3px 0 ${shadow0}` : `5px 5px 0 ${shadow0}`;
 
   return (
@@ -100,7 +95,7 @@ export default function Navbar() {
           <Link href="/" style={{ display: "flex", alignItems: "center", gap: 8, textDecoration: "none", flexShrink: 0 }}>
             <div style={{
               width: scrolled ? 28 : 32, height: scrolled ? 28 : 32, borderRadius: 8,
-              background: "var(--teal)", border: `2px solid ${isDark ? "rgba(255,255,255,0.2)" : "#000"}`,
+              background: "var(--teal)", border: "2px solid var(--navbar-border)",
               boxShadow: `2px 2px 0 ${shadow0}`, display: "flex", alignItems: "center",
               justifyContent: "center", flexShrink: 0, transition: "all 0.3s",
             }}>
@@ -144,17 +139,15 @@ export default function Navbar() {
             </div>
 
             {/* Divider */}
-            <div className="nav-divider" style={{ width: 1, height: 18, background: isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.2)", margin: "0 4px" }} />
+            <div className="nav-divider" style={{ width: 1, height: 18, background: "var(--navbar-divider)", margin: "0 4px" }} />
 
-            {/* Theme toggle */}
+            {/* Theme */}
             <button onClick={toggle}
               style={{ width: 32, height: 32, borderRadius: 8, flexShrink: 0, border: "2px solid transparent", background: "transparent", color: "var(--text-muted)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all .15s" }}
               onMouseOver={e => { e.currentTarget.style.background = hoverBg; e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.border = `2px solid ${borderCol}`; }}
               onMouseOut={e  => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.border = "2px solid transparent"; }}
-              suppressHydrationWarning
             >
-              {/* Selalu render icon yang sama sebelum mount supaya tidak mismatch */}
-              {(!mounted || theme === "light") ? (
+              {theme === "light" ? (
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
                 </svg>
@@ -185,7 +178,7 @@ export default function Navbar() {
                 >
                   <div style={{
                     width: 26, height: 26, borderRadius: "50%", background: roleColor,
-                    border: `2px solid ${isDark ? "#111" : "#fff"}`, outline: `2px solid ${roleColor}`,
+                    border: "2px solid var(--surface)", outline: `2px solid ${roleColor}`,
                     display: "flex", alignItems: "center", justifyContent: "center",
                     fontSize: 9, fontWeight: 900, color: "#000", fontFamily: "var(--font-mono)", flexShrink: 0,
                   }}>
@@ -203,12 +196,13 @@ export default function Navbar() {
                 {dropdownOpen && (
                   <div style={{
                     position: "absolute", right: 0, top: "calc(100% + 10px)",
-                    background: dropBg, border: `2.5px solid ${isDark ? "#333" : "#000"}`,
+                    background: dropBg, border: "2.5px solid var(--border-color)",
                     borderRadius: 14, minWidth: 210, boxShadow: "4px 4px 0 #000",
                     zIndex: 9999, overflow: "hidden",
                   }}>
-                    <div style={{ padding: "14px 16px", display: "flex", alignItems: "center", gap: 12, borderBottom: `1.5px solid ${isDark ? "#2a2a2a" : "#eee"}` }}>
-                      <div style={{ width: 38, height: 38, borderRadius: "50%", background: roleColor, border: `2px solid ${isDark ? "#333" : "#000"}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 900, color: "#000", fontFamily: "var(--font-mono)", flexShrink: 0 }}>
+                    {/* Header */}
+                    <div style={{ padding: "14px 16px", display: "flex", alignItems: "center", gap: 12, borderBottom: "1.5px solid var(--divider)" }}>
+                      <div style={{ width: 38, height: 38, borderRadius: "50%", background: roleColor, border: "2px solid var(--border-color)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 900, color: "#000", fontFamily: "var(--font-mono)", flexShrink: 0 }}>
                         {initials}
                       </div>
                       <div>
@@ -220,6 +214,7 @@ export default function Navbar() {
                       </div>
                     </div>
 
+                    {/* Items */}
                     {[
                       ...(user.role === "SUPERADMIN" ? [{
                         label: "Users", href: "/users",
@@ -237,8 +232,9 @@ export default function Navbar() {
                       </button>
                     ))}
 
+                    {/* Sign out */}
                     <button onClick={handleLogout}
-                      style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 16px", background: "transparent", border: "none", borderTop: `1.5px solid ${isDark ? "#2a2a2a" : "#eee"}`, cursor: "pointer", fontFamily: "var(--font-mono)", fontSize: 12, color: "#ff6b6b", textAlign: "left", transition: "background .1s" }}
+                      style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 16px", background: "transparent", border: "none", borderTop: "1.5px solid var(--divider)", cursor: "pointer", fontFamily: "var(--font-mono)", fontSize: 12, color: "#ff6b6b", textAlign: "left", transition: "background .1s" }}
                       onMouseOver={e => e.currentTarget.style.background = "rgba(255,107,107,0.08)"}
                       onMouseOut={e  => e.currentTarget.style.background = "transparent"}
                     >
@@ -259,7 +255,7 @@ export default function Navbar() {
                 letterSpacing: "0.07em", textDecoration: "none",
                 padding: "8px 16px", borderRadius: 999,
                 background: "var(--teal)", color: "#000",
-                border: `2px solid ${isDark ? "rgba(255,255,255,0.2)" : "#000"}`,
+                border: "2px solid var(--navbar-border)",
                 boxShadow: `2px 2px 0 ${shadow0}`,
                 transition: "all .15s", whiteSpace: "nowrap",
               }}

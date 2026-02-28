@@ -2,30 +2,22 @@ import { NextRequest, NextResponse } from "next/server";
 
 const COOKIE_NAME = "sid";
 
-// User-agent dari bot social media — boleh lewat agar preview link berfungsi
 const SOCIAL_PREVIEW_UA = [
   "telegrambot", "whatsapp", "facebookexternalhit", "twitterbot",
   "linkedinbot", "discordbot", "slackbot", "applebot", "googlebot",
   "bingbot", "rogerbot", "embedly", "pinterest", "vkshare",
 ];
 
-// User-agent dari scraper / HTTP client programatik — diarahkan ke versi raw
 const SCRAPER_UA = [
   "curl", "wget", "python-requests", "python-httpx", "aiohttp",
   "node-fetch", "got", "axios", "httpie", "insomnia", "postman",
   "go-http-client", "java/", "okhttp", "php", "ruby", "libwww-perl",
 ];
 
-/** Cek apakah request berasal dari bot preview social media. */
 function isSocialPreviewBot(ua: string): boolean {
   return SOCIAL_PREVIEW_UA.some((bot) => ua.toLowerCase().includes(bot));
 }
 
-/**
- * Cek apakah request berasal dari HTTP client / scraper programatik.
- * Request tanpa user-agent, atau yang tidak menyebut Mozilla/AppleWebKit,
- * dianggap bukan browser biasa.
- */
 function isProgrammaticScraper(ua: string): boolean {
   if (!ua || ua.trim() === "") return true;
   const lower = ua.toLowerCase();
@@ -34,7 +26,6 @@ function isProgrammaticScraper(ua: string): boolean {
   return false;
 }
 
-/** Validasi format cookie session (harus 64-char hex). */
 function hasValidCookieFormat(token: string | undefined): boolean {
   return typeof token === "string" && /^[0-9a-f]{64}$/.test(token);
 }
@@ -42,18 +33,15 @@ function hasValidCookieFormat(token: string | undefined): boolean {
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Kalau sudah login, jangan bisa akses /login atau /register lagi
+  // /login dan /register — JANGAN redirect hanya berdasarkan format cookie.
+  // Session bisa saja sudah expired di DB meski cookie-nya masih ada dan valid formatnya.
+  // Biarkan login page yang handle redirect (via /api/auth/me check di client),
+  // sehingga cookie stale bisa otomatis di-clear tanpa perlu hapus manual.
   if (pathname === "/login" || pathname === "/register") {
-    const token = req.cookies.get(COOKIE_NAME)?.value;
-    if (hasValidCookieFormat(token)) {
-      const url = req.nextUrl.clone();
-      url.pathname = "/";
-      return NextResponse.redirect(url);
-    }
     return NextResponse.next();
   }
 
-  // /users hanya untuk yang sudah login (SUPERADMIN di cek di halaman-nya)
+  // /users — butuh login
   if (pathname === "/users" || pathname.startsWith("/users/")) {
     const token = req.cookies.get(COOKIE_NAME)?.value;
     if (!hasValidCookieFormat(token)) {
