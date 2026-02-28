@@ -44,6 +44,7 @@ export default function PageLoader({ timeoutMs = 8000, label }: PageLoaderProps)
         alt="CS"
         width={52}
         height={52}
+        className="cs-loader-logo"
         style={{ borderRadius: 12, display: "block" }}
       />
 
@@ -93,13 +94,6 @@ export default function PageLoader({ timeoutMs = 8000, label }: PageLoaderProps)
           </button>
         </div>
       )}
-
-      <style>{`
-        @keyframes cs-loader-bounce {
-          0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
-          40%            { transform: translateY(-10px); opacity: 1; }
-        }
-      `}</style>
-    </div>
+</div>
   );
 }

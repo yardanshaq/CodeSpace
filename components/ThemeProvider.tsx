@@ -3,10 +3,9 @@
 /**
  * ThemeProvider — menyediakan context dark/light mode ke seluruh aplikasi.
  *
- * PENTING: jangan return null saat belum mounted — ini penyebab blank putih
- * di Safari iOS dan Android WebView. Solusinya: selalu render children,
- * biarkan tema mungkin flash sebentar dari light ke dark (FOUC minimal),
- * tapi halaman tidak pernah kosong.
+ * Fix FOUC: tema awal sekarang dibaca langsung dari document.documentElement
+ * (yang sudah di-set oleh inline script di layout.tsx sebelum render),
+ * bukan dari state "light" default. Ini mencegah flash light mode saat reload.
  */
 
 import { createContext, useContext, useEffect, useState } from "react";
@@ -28,16 +27,28 @@ export function useTheme() {
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState<Theme>("light");
+  // Baca tema langsung dari <html data-theme="..."> yang sudah di-set
+  // oleh blocking script di layout.tsx — tidak ada default "light" lagi.
+  const [theme, setTheme] = useState<Theme>(() => {
+    if (typeof document !== "undefined") {
+      const attr = document.documentElement.getAttribute("data-theme");
+      if (attr === "dark" || attr === "light") return attr;
+    }
+    return "light";
+  });
 
   useEffect(() => {
-    // Baca preferensi yang tersimpan, atau deteksi dari system preference
+    // Sync ulang saat mount — handle SSR vs client mismatch
     const stored    = localStorage.getItem("theme") as Theme | null;
     const preferred = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
     const initial   = stored ?? preferred;
 
-    setTheme(initial as Theme);
+    // Hanya update jika berbeda (hindari re-render tidak perlu)
+    if (initial !== theme) {
+      setTheme(initial);
+    }
     document.documentElement.setAttribute("data-theme", initial);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const toggle = () => {
@@ -47,8 +58,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem("theme", next);
   };
 
-  // Selalu render children — tidak pernah return null
-  // (return null = blank putih di mobile)
   return (
     <ThemeContext.Provider value={{ theme, toggle }}>
       {children}
