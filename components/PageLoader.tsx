@@ -40,7 +40,7 @@ export default function PageLoader({ timeoutMs = 8000, label }: PageLoaderProps)
         style={{
           borderRadius: 12,
           display: "block",
-          animation: "cs-logo-entrance 1.8s ease-in-out infinite",
+          animation: "cs-logo-entrance 2.6s ease-in-out infinite",
           willChange: "transform",
         }}
       />
@@ -55,7 +55,7 @@ export default function PageLoader({ timeoutMs = 8000, label }: PageLoaderProps)
                 borderRadius: "50%",
                 background:   "var(--teal, #4ecdc4)",
                 display:      "inline-block",
-                animation:    `cs-loader-bounce 1.2s ease-in-out ${i * 0.2}s infinite`,
+                animation:    `cs-loader-bounce 0.7s ease-in-out ${i * 0.2}s infinite`,
               }}
             />
           ))}
