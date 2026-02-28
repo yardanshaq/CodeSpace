@@ -1,23 +1,11 @@
 "use client";
-
-/**
- * PageLoader — full-screen loading screen reusable untuk semua halaman.
- * 
- * Timeout default 8 detik sebelum tombol Refresh muncul.
- * Untuk navigasi antar halaman (loading.tsx), timeout ini jarang tercapai
- * karena Next.js sudah dismiss loading sebelum 8 detik.
- */
-
 import { useEffect, useState } from "react";
-
 interface PageLoaderProps {
   timeoutMs?: number;
   label?: string;
 }
-
 export default function PageLoader({ timeoutMs = 8000, label }: PageLoaderProps) {
   const [timedOut, setTimedOut] = useState(false);
-
   useEffect(() => {
     const timer = setTimeout(() => setTimedOut(true), timeoutMs);
     return () => {
@@ -27,32 +15,35 @@ export default function PageLoader({ timeoutMs = 8000, label }: PageLoaderProps)
       window.dispatchEvent(new CustomEvent("cs-loader-done"));
     };
   }, [timeoutMs]);
-
   return (
     <div
       style={{
-        position:        "fixed",
-        inset:           0,
-        minHeight:       "100vh",
-        display:         "flex",
-        flexDirection:   "column",
-        alignItems:      "center",
-        justifyContent:  "center",
-        background:      "var(--bg, #e8e8e8)",
-        gap:             20,
-        zIndex:          9000,
+        position:       "fixed",
+        inset:          0,
+        minHeight:      "100vh",
+        display:        "flex",
+        flexDirection:  "column",
+        alignItems:     "center",
+        justifyContent: "center",
+        background:     "var(--bg, #e8e8e8)",
+        gap:            20,
+        zIndex:         9000,
       }}
     >
-      {/* Logo */}
+      {/* Logo — animasi squash & stretch ala Discord */}
       <img
         src="https://cdn.nekohime.site/file/sOyPp0Jp.png"
         alt="CS"
         width={52}
         height={52}
         className="cs-loader-logo"
-        style={{ borderRadius: 12, display: "block" }}
+        style={{
+          borderRadius: 12,
+          display: "block",
+          animation: "cs-logo-entrance 3s ease-in-out infinite",
+          willChange: "transform",
+        }}
       />
-
       {!timedOut ? (
         <div style={{ display: "flex", gap: 8 }}>
           {[0, 1, 2].map((i) => (
@@ -99,11 +90,18 @@ export default function PageLoader({ timeoutMs = 8000, label }: PageLoaderProps)
           </button>
         </div>
       )}
-
       <style>{`
         @keyframes cs-loader-bounce {
           0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
           40%            { transform: translateY(-10px); opacity: 1; }
+        }
+        @keyframes cs-logo-entrance {
+          0%   { transform: translateZ(0) rotate(0deg)   scale(1);    }
+          20%  { transform: translateZ(0) rotate(360deg) scale(1.08); }
+          30%  { transform: translateZ(0) rotate(360deg) scale(0.95); }
+          38%  { transform: translateZ(0) rotate(360deg) scale(1.02); }
+          45%  { transform: translateZ(0) rotate(360deg) scale(1);    }
+          100% { transform: translateZ(0) rotate(360deg) scale(1);    }
         }
         [data-theme="dark"] .cs-loader-logo {
           filter: invert(1);

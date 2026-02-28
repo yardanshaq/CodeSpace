@@ -173,10 +173,6 @@ SUPERADMIN_PASSWORD="your_strong_password"
 # Upstash Redis — rate limiting
 UPSTASH_REDIS_REST_URL="https://your-db.upstash.io"
 UPSTASH_REDIS_REST_TOKEN="your_upstash_token"
-
-# Cloudflare Worker Proxy (optional)
-PROXY_WORKER_URL="https://your-worker.workers.dev"
-PROXY_WORKER_KEY="your_proxy_secret_key"
 ```
 
 > ⚠️ Never commit `.env` to git. Never use `NEXT_PUBLIC_` prefix for sensitive variables.

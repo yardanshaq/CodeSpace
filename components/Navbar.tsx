@@ -24,18 +24,15 @@ export default function Navbar() {
   const [scrolled, setScrolled]   = useState(false);
   const [logoAnim, setLogoAnim]   = useState(false);
 
-  // Trigger animasi logo hanya setelah loading screen selesai (event dari PageLoader)
-  // Kalau tidak ada loading screen (navigasi langsung), fallback setelah 300ms
+  // Animasi logo hanya jalan setelah event cs-loader-done dari PageLoader.
+  // Tidak ada fallback timer — kalau halaman tidak pakai PageLoader,
+  // logo tetap diam (tidak ada animasi setengah jalan).
   useEffect(() => {
-    const trigger = () => setLogoAnim(true);
+    let t: ReturnType<typeof setTimeout>;
+    const trigger = () => { t = setTimeout(() => setLogoAnim(true), 200); };
     window.addEventListener("cs-loader-done", trigger, { once: true });
-    // Fallback: kalau halaman tidak pakai PageLoader, tetap animasi setelah 300ms
-    const fallback = setTimeout(() => {
-      setLogoAnim(true);
-      window.removeEventListener("cs-loader-done", trigger);
-    }, 300);
     return () => {
-      clearTimeout(fallback);
+      clearTimeout(t);
       window.removeEventListener("cs-loader-done", trigger);
     };
   }, []);
@@ -124,7 +121,7 @@ export default function Navbar() {
               background: "var(--teal)", border: "2px solid var(--navbar-border)",
               boxShadow: `2px 2px 0 ${shadow0}`, display: "flex", alignItems: "center",
               justifyContent: "center", flexShrink: 0, transition: "all 0.3s",
-              animation: logoAnim ? "cs-logo-entrance 0.6s cubic-bezier(0.4,0,0.2,1) forwards" : "none",
+              animation: logoAnim ? "cs-logo-entrance 1s cubic-bezier(0.4,0,0.2,1) forwards" : "none",
             }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#000" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
@@ -303,11 +300,9 @@ export default function Navbar() {
       </nav>
       <style>{`
         @keyframes cs-logo-entrance {
-          0%   { transform: rotate(0deg)   scale(1);    }
-          30%  { transform: rotate(-20deg) scale(0.85); }
-          60%  { transform: rotate(12deg)  scale(1.1);  }
-          80%  { transform: rotate(-5deg)  scale(0.97); }
-          100% { transform: rotate(0deg)   scale(1);    }
+          0%   { transform: scale(1)    rotate(0deg);   }
+          35%  { transform: scale(1.45) rotate(-22deg); }
+          100% { transform: scale(1)    rotate(0deg);   }
         }
       `}</style>
     </>
