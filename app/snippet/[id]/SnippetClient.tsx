@@ -83,6 +83,9 @@ function fileEmoji(mimeType: string): string {
   return "📦";
 }
 
+// Timeout untuk fetch snippet (ms) — cegah loading stuck selamanya
+const FETCH_TIMEOUT_MS = 10_000;
+
 export default function SnippetClient({ id }: { id: string }) {
   const router = useRouter();
 
@@ -100,13 +103,30 @@ export default function SnippetClient({ id }: { id: string }) {
   const lastUpdatedAt = useRef<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hasTracked = useRef(false);
+  // Safety: jika loading masih true setelah FETCH_TIMEOUT_MS, paksa dismiss
+  const loadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchSnippet = useCallback(
     async (silent = false) => {
       if (!id) return;
+
+      // AbortController untuk timeout per-request
+      const controller = new AbortController();
+      const timeoutId = setTimeout(
+        () => controller.abort(),
+        FETCH_TIMEOUT_MS
+      );
+
       try {
-        const r = await fetch(`/api/snippets/${id}`);
-        if (!r.ok) { if (!silent) setLoading(false); return; }
+        const r = await fetch(`/api/snippets/${id}`, {
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+
+        if (!r.ok) {
+          if (!silent) setLoading(false);
+          return;
+        }
         const data: Snippet = await r.json();
 
         if (silent && lastUpdatedAt.current && data.updatedAt !== lastUpdatedAt.current) {
@@ -118,6 +138,7 @@ export default function SnippetClient({ id }: { id: string }) {
           setLoading(false);
         }
       } catch {
+        clearTimeout(timeoutId);
         if (!silent) setLoading(false);
       }
     },
@@ -127,10 +148,20 @@ export default function SnippetClient({ id }: { id: string }) {
   useEffect(() => {
     if (!id || hasTracked.current) return;
     hasTracked.current = true;
+
     fetchSnippet(false);
     fetch(`/api/snippets/${id}`, { method: "PATCH" });
     pollRef.current = setInterval(() => fetchSnippet(true), 3000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+
+    // Safety timeout — kalau fetch hang, loading tetap dismiss setelah batas waktu
+    loadingTimerRef.current = setTimeout(() => {
+      setLoading(false);
+    }, FETCH_TIMEOUT_MS + 1000);
+
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+      if (loadingTimerRef.current) clearTimeout(loadingTimerRef.current);
+    };
   }, [fetchSnippet, id]);
 
   const handleCopy = () => {
@@ -184,7 +215,7 @@ export default function SnippetClient({ id }: { id: string }) {
   const formatDate = (d: string) =>
     new Date(d).toLocaleDateString("id-ID", { day: "2-digit", month: "2-digit", year: "numeric" });
 
-  if (loading) return <PageLoader label="loading snippet" />;
+  if (loading) return <PageLoader />;
   if (!snippet) return (<><Navbar /><main className="main"><div className="loading">SNIPPET NOT FOUND.</div></main></>);
 
   const highlightedLines = highlight(snippet.code).split("\n");
