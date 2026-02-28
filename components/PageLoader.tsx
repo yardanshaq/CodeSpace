@@ -4,7 +4,7 @@ interface PageLoaderProps {
   timeoutMs?: number;
   label?: string;
 }
-export default function PageLoader({ timeoutMs = 8000, label }: PageLoaderProps) {
+export default function PageLoader({ timeoutMs = 15000, label }: PageLoaderProps) {
   const [timedOut, setTimedOut] = useState(false);
   useEffect(() => {
     const timer = setTimeout(() => setTimedOut(true), timeoutMs);
