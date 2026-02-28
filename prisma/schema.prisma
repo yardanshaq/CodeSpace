@@ -1,0 +1,81 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model system_alerts {
+  id         Int       @id @default(autoincrement())
+  sender     String?
+  message    String?
+  created_at DateTime? @default(now()) @db.Timestamp(6)
+}
+
+model Admin {
+  id          String    @id @default(cuid())
+  username    String    @unique
+  password    String
+  role        Role      @default(ADMIN)
+  lastLoginAt DateTime?
+  sessions    Session[]
+  snippets    Snippet[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+// Opaque session — cookie hanya berisi token random, tidak ada JWT
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique  // 64-char hex random, disimpan sebagai SHA-256 hash
+  adminId   String
+  admin     Admin    @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  ip        String?
+  userAgent String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model Snippet {
+  id          String        @id @default(cuid())
+  title       String
+  filename    String        @unique
+  code        String        @db.Text
+  category    String        @default("Scrape")
+  isPublic    Boolean       @default(true)
+  views       Int           @default(0)
+  adminId     String
+  admin       Admin         @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  attachments SnippetFile[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model GlobalFile {
+  id          String        @id @default(cuid())
+  name        String        @unique
+  mimeType    String
+  size        Int
+  data        Bytes
+  uploadedBy  String
+  attachments SnippetFile[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model SnippetFile {
+  snippetId    String
+  globalFileId String
+  snippet      Snippet    @relation(fields: [snippetId], references: [id], onDelete: Cascade)
+  globalFile   GlobalFile @relation(fields: [globalFileId], references: [id], onDelete: Cascade)
+
+  @@id([snippetId, globalFileId])
+}
+
+enum Role {
+  SUPERADMIN
+  ADMIN
+  MEMBER
+}
