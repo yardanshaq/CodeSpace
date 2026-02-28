@@ -77,7 +77,9 @@ export default function HomePage() {
       : list;
 
     setSnippets(filtered);
-    setLoading(false);
+    setTimeout(() => {
+      setLoading(false);
+    }, 4100);
   }, [search, selectedAuthors]);
 
   useEffect(() => {
