@@ -355,6 +355,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No code provided" }, { status: 400 });
     }
 
+    // SSE stream — setiap console.log langsung dikirim ke client tanpa nunggu selesai
+    let streamController: ReadableStreamDefaultController<Uint8Array>;
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(c) { streamController = c; },
+    });
+
+    const sendEvent = (data: object) => {
+      try {
+        streamController.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+      } catch { /* stream sudah ditutup */ }
+    };
+
     const tmpDir = os.tmpdir();
     const tempDir = path.join(tmpDir, "temp");
     if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
@@ -382,26 +395,59 @@ export async function POST(req: NextRequest) {
 
     const logs: string[] = [];
     const errors: string[] = [];
+    let hasError = false;
+
+    const fmtArgs = (args: unknown[]) =>
+      args.map((a) =>
+        a === null ? "null" :
+        a === undefined ? "undefined" :
+        typeof a === "object" ? JSON.stringify(a, null, 2) : String(a)
+      ).join(" ");
 
     const fakeConsole = {
-      log: (...args: unknown[]) =>
-        logs.push(args.map((a) =>
-          a === null ? "null" :
-          a === undefined ? "undefined" :
-          typeof a === "object" ? JSON.stringify(a, null, 2) : String(a)
-        ).join(" ")),
-      error: (...args: unknown[]) =>
-        errors.push("[error] " + args.map((a) =>
-          typeof a === "object" ? JSON.stringify(a, null, 2) : String(a)
-        ).join(" ")),
-      warn: (...args: unknown[]) => logs.push("[warn] " + args.map(String).join(" ")),
-      info: (...args: unknown[]) => logs.push("[info] " + args.map(String).join(" ")),
-      dir: (...args: unknown[]) => logs.push(args.map((a) => JSON.stringify(a, null, 2)).join(" ")),
-      table: (...args: unknown[]) => logs.push(args.map((a) => JSON.stringify(a, null, 2)).join(" ")),
-      debug: (...args: unknown[]) => logs.push("[debug] " + args.map(String).join(" ")),
+      log: (...args: unknown[]) => {
+        const text = fmtArgs(args);
+        logs.push(text);
+        sendEvent({ type: "log", text });
+      },
+      error: (...args: unknown[]) => {
+        const text = "[error] " + fmtArgs(args);
+        errors.push(text);
+        hasError = true;
+        sendEvent({ type: "error", text });
+      },
+      warn: (...args: unknown[]) => {
+        const text = "[warn] " + args.map(String).join(" ");
+        logs.push(text);
+        sendEvent({ type: "warn", text });
+      },
+      info: (...args: unknown[]) => {
+        const text = "[info] " + args.map(String).join(" ");
+        logs.push(text);
+        sendEvent({ type: "log", text });
+      },
+      dir: (...args: unknown[]) => {
+        const text = args.map((a) => JSON.stringify(a, null, 2)).join(" ");
+        logs.push(text);
+        sendEvent({ type: "log", text });
+      },
+      table: (...args: unknown[]) => {
+        const text = args.map((a) => JSON.stringify(a, null, 2)).join(" ");
+        logs.push(text);
+        sendEvent({ type: "log", text });
+      },
+      debug: (...args: unknown[]) => {
+        const text = "[debug] " + args.map(String).join(" ");
+        logs.push(text);
+        sendEvent({ type: "log", text });
+      },
     };
 
     const startTime = Date.now();
+
+    // Jalankan eksekusi secara async di background — stream langsung dikirim ke client
+    // sehingga setiap console.log muncul real-time tanpa nunggu script selesai
+    (async () => {
     const NativePromise = Promise;
     const proxiedAxios = createProxiedAxios();
     const proxiedFetch = createProxyFetch();
@@ -445,8 +491,8 @@ export async function POST(req: NextRequest) {
           logs.push(`[process.exit(${c ?? 0}) called]`);
           throw new Error("__EXIT__");
         },
-        stdout: { write: (s: string) => { logs.push(s); return true; } },
-        stderr: { write: (s: string) => { errors.push(s); return true; } },
+        stdout: { write: (s: string) => { logs.push(s); sendEvent({ type: "log", text: s }); return true; } },
+        stderr: { write: (s: string) => { errors.push(s); hasError = true; sendEvent({ type: "error", text: s }); return true; } },
         nextTick: (fn: () => void) => NativePromise.resolve().then(fn),
       },
       Buffer, URL, URLSearchParams, TextEncoder, TextDecoder,
@@ -556,19 +602,31 @@ ${processedCode}
       const msg = e instanceof Error ? e.message : String(e);
       if (msg !== "__EXIT__") {
         errors.push("ExecutionError: " + formatError(e));
+        hasError = true;
+        sendEvent({ type: "error", text: "ExecutionError: " + formatError(e) });
       }
     }
 
     const elapsed = Date.now() - startTime;
-    const allOutput = [...logs, ...errors];
 
-    return NextResponse.json({
-      output: allOutput.length > 0
-        ? allOutput.join("\n")
-        : "// Code executed successfully with no console output.",
-      elapsed,
-      hasError: errors.length > 0,
-    });
+    // Kirim event "done" lalu tutup stream
+    if (logs.length === 0 && errors.length === 0) {
+      sendEvent({ type: "log", text: "// Code executed successfully with no console output." });
+    }
+    sendEvent({ type: "done", elapsed, hasError: errors.length > 0 });
+    streamController!.close();
+
+  })(); // tutup async IIFE — eksekusi jalan di background, stream langsung dikirim
+
+  // Kembalikan SSE response segera — logs mengalir real-time saat script jalan
+  return new Response(stream, {
+    headers: {
+      "Content-Type":  "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection":    "keep-alive",
+      "X-Accel-Buffering": "no",
+    },
+  });
 
   } catch (e: unknown) {
     return NextResponse.json({
