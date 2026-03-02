@@ -3,6 +3,7 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/ThemeProvider";
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://codespace.yardanshaq.xyz"),
   title: "CodeSpace",
   description: "A place to share simple snippets",
   openGraph: {
