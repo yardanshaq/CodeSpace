@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 // Maksimal 3 akun per IP per jam
 const registerAttempts = new Map<string, { count: number; resetAt: number }>();
 const MAX_PER_HOUR = 3;
-const WINDOW_MS    = 60 * 60 * 1000; // 1 jam
+const WINDOW_MS    = 24 * 60 * 60 * 1000; // 1 jam
 
 function checkRateLimit(ip: string): { allowed: boolean; retryAfterSec: number } {
   const now  = Date.now();
