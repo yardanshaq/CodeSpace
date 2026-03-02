@@ -79,3 +79,10 @@ enum Role {
   ADMIN
   MEMBER
 }
+
+model ProxyDomain {
+  id        String   @id @default(cuid())
+  domain    String   @unique
+  note      String   @default("")
+  createdAt DateTime @default(now())
+}
