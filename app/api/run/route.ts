@@ -99,12 +99,31 @@ function tryParseJson(str: string) {
   try { return JSON.parse(str) } catch { return null }
 }
 
+// Domain yang wajib diproxy (Cloudflare protected sites).
+// Snippet bisa tambah header x-use-proxy: "1" untuk force proxy request tertentu.
+// Semua domain lain (API publik, dll) langsung tanpa proxy.
+const CF_DOMAINS = (process.env.PROXY_DOMAINS || "")
+  .split(",")
+  .map(d => d.trim().toLowerCase())
+  .filter(Boolean);
+
+function shouldProxy(url: string): boolean {
+  if (!url) return false;
+  try {
+    const hostname = new URL(url).hostname.toLowerCase();
+    return CF_DOMAINS.some(d => hostname === d || hostname.endsWith("." + d));
+  } catch {
+    return false;
+  }
+}
+
 function createProxiedAxios() {
   const originalAxios = MODULE_MAP['axios'] as any
   if (!originalAxios) return originalAxios
 
   const PROXY_URL = process.env.PROXY_WORKER_URL
   const PROXY_KEY = process.env.PROXY_WORKER_KEY
+  // Kalau tidak ada env proxy, kembalikan axios biasa
   if (!PROXY_URL || !PROXY_KEY) return originalAxios
 
   const proxyHostname = new URL(PROXY_URL).hostname
@@ -112,12 +131,16 @@ function createProxiedAxios() {
 
   proxied.interceptors.request.use((config: any) => {
     const targetUrl = config.url || ''
+    // Skip kalau URL adalah proxy itu sendiri
     if (targetUrl.includes(proxyHostname)) return config
+    // Skip kalau domain tidak ada di CF_DOMAINS dan tidak ada header force-proxy
+    if (!shouldProxy(targetUrl) && !config.headers?.['x-use-proxy']) return config
 
     const method = (config.method || 'GET').toUpperCase()
     const originalHeaders = { ...config.headers }
     delete originalHeaders['Content-Type']
     delete originalHeaders['content-type']
+    delete originalHeaders['x-use-proxy'] // hapus header internal sebelum dikirim
 
     config._originalUrl = targetUrl
     config._isProxied = true
@@ -148,7 +171,6 @@ function createProxiedAxios() {
     return response
   })
 
-  // Proxy juga untuk method shorthand (get, post, dll)
   return proxied
 }
 
@@ -161,7 +183,11 @@ function createProxyFetch() {
 
   return async function proxyFetch(input: any, init?: any): Promise<Response> {
     const targetUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+    // Skip kalau URL adalah proxy itu sendiri
     if (targetUrl.includes(proxyHostname)) return globalThis.fetch(input, init)
+    // Skip kalau domain tidak perlu diproxy dan tidak ada header force-proxy
+    const forceProxy = init?.headers?.['x-use-proxy'] || (init?.headers instanceof Headers && init.headers.get('x-use-proxy'))
+    if (!shouldProxy(targetUrl) && !forceProxy) return globalThis.fetch(input, init)
 
     const method = (init?.method || 'GET').toUpperCase()
     const originalHeaders: Record<string, string> = {}
@@ -355,198 +381,170 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No code provided" }, { status: 400 });
     }
 
-    // SSE stream — setiap console.log langsung dikirim ke client tanpa nunggu selesai
-    let streamController: ReadableStreamDefaultController<Uint8Array>;
     const encoder = new TextEncoder();
-    const stream = new ReadableStream<Uint8Array>({
-      start(c) { streamController = c; },
-    });
 
-    const sendEvent = (data: object) => {
-      try {
-        streamController.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
-      } catch { /* stream sudah ditutup */ }
-    };
+    // Semua eksekusi berjalan di dalam ReadableStream start callback —
+    // ini pola yang benar untuk Next.js App Router streaming.
+    // Background IIFE tidak reliable karena serverless bisa kill context lebih awal.
+    const stream = new ReadableStream({
+      async start(controller) {
+        const sendEvent = (data: object) => {
+          try {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+          } catch { /* controller sudah ditutup */ }
+        };
 
-    const tmpDir = os.tmpdir();
-    const tempDir = path.join(tmpDir, "temp");
-    if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+        try {
+          const tmpDir = os.tmpdir();
+          const tempDir = path.join(tmpDir, "temp");
+          if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
 
-    if (snippetId) {
-      try {
-        const attachments = await prisma.snippetFile.findMany({
-          where: { snippetId },
-          include: { globalFile: { select: { name: true, data: true } } },
-        });
-        for (const a of attachments) {
-          fs.writeFileSync(path.join(tempDir, a.globalFile.name), a.globalFile.data);
-        }
-      } catch (e) {
-        console.warn("Warning: failed to load snippet attachments:", e);
-      }
-    }
+          if (snippetId) {
+            try {
+              const attachments = await prisma.snippetFile.findMany({
+                where: { snippetId },
+                include: { globalFile: { select: { name: true, data: true } } },
+              });
+              for (const a of attachments) {
+                fs.writeFileSync(path.join(tempDir, a.globalFile.name), a.globalFile.data);
+              }
+            } catch (e) {
+              console.warn("Warning: failed to load snippet attachments:", e);
+            }
+          }
 
-    if (Array.isArray(files) && files.length > 0) {
-      for (const f of files as { name: string; data: string }[]) {
-        if (!f.name || !f.data) continue;
-        fs.writeFileSync(path.join(tempDir, path.basename(f.name)), Buffer.from(f.data, "base64"));
-      }
-    }
+          if (Array.isArray(files) && files.length > 0) {
+            for (const f of files as { name: string; data: string }[]) {
+              if (!f.name || !f.data) continue;
+              fs.writeFileSync(path.join(tempDir, path.basename(f.name)), Buffer.from(f.data, "base64"));
+            }
+          }
 
-    const logs: string[] = [];
-    const errors: string[] = [];
-    let hasError = false;
+          const logs: string[] = [];
+          const errors: string[] = [];
 
-    const fmtArgs = (args: unknown[]) =>
-      args.map((a) =>
-        a === null ? "null" :
-        a === undefined ? "undefined" :
-        typeof a === "object" ? JSON.stringify(a, null, 2) : String(a)
-      ).join(" ");
+          const fmtArgs = (args: unknown[]) =>
+            args.map((a) =>
+              a === null ? "null" :
+              a === undefined ? "undefined" :
+              typeof a === "object" ? JSON.stringify(a, null, 2) : String(a)
+            ).join(" ");
 
-    const fakeConsole = {
-      log: (...args: unknown[]) => {
-        const text = fmtArgs(args);
-        logs.push(text);
-        sendEvent({ type: "log", text });
-      },
-      error: (...args: unknown[]) => {
-        const text = "[error] " + fmtArgs(args);
-        errors.push(text);
-        hasError = true;
-        sendEvent({ type: "error", text });
-      },
-      warn: (...args: unknown[]) => {
-        const text = "[warn] " + args.map(String).join(" ");
-        logs.push(text);
-        sendEvent({ type: "warn", text });
-      },
-      info: (...args: unknown[]) => {
-        const text = "[info] " + args.map(String).join(" ");
-        logs.push(text);
-        sendEvent({ type: "log", text });
-      },
-      dir: (...args: unknown[]) => {
-        const text = args.map((a) => JSON.stringify(a, null, 2)).join(" ");
-        logs.push(text);
-        sendEvent({ type: "log", text });
-      },
-      table: (...args: unknown[]) => {
-        const text = args.map((a) => JSON.stringify(a, null, 2)).join(" ");
-        logs.push(text);
-        sendEvent({ type: "log", text });
-      },
-      debug: (...args: unknown[]) => {
-        const text = "[debug] " + args.map(String).join(" ");
-        logs.push(text);
-        sendEvent({ type: "log", text });
-      },
-    };
+          const fakeConsole = {
+            log: (...args: unknown[]) => {
+              const text = fmtArgs(args); logs.push(text);
+              sendEvent({ type: "log", text });
+            },
+            error: (...args: unknown[]) => {
+              const text = "[error] " + fmtArgs(args); errors.push(text);
+              sendEvent({ type: "error", text });
+            },
+            warn: (...args: unknown[]) => {
+              const text = "[warn] " + args.map(String).join(" "); logs.push(text);
+              sendEvent({ type: "warn", text });
+            },
+            info: (...args: unknown[]) => {
+              const text = "[info] " + fmtArgs(args); logs.push(text);
+              sendEvent({ type: "log", text });
+            },
+            dir: (...args: unknown[]) => {
+              const text = args.map((a) => JSON.stringify(a, null, 2)).join(" "); logs.push(text);
+              sendEvent({ type: "log", text });
+            },
+            table: (...args: unknown[]) => {
+              const text = args.map((a) => JSON.stringify(a, null, 2)).join(" "); logs.push(text);
+              sendEvent({ type: "log", text });
+            },
+            debug: (...args: unknown[]) => {
+              const text = "[debug] " + args.map(String).join(" "); logs.push(text);
+              sendEvent({ type: "log", text });
+            },
+          };
 
-    const startTime = Date.now();
+          const startTime = Date.now();
+          const NativePromise = Promise;
+          const proxiedAxios = createProxiedAxios();
+          const proxiedFetch = createProxyFetch();
+          const { sandboxFs, sandboxFsp } = createSandboxedFs(tempDir);
 
-    // Jalankan eksekusi secara async di background — stream langsung dikirim ke client
-    // sehingga setiap console.log muncul real-time tanpa nunggu script selesai
-    (async () => {
-    const NativePromise = Promise;
-    const proxiedAxios = createProxiedAxios();
-    const proxiedFetch = createProxyFetch();
+          const sandboxRequire = (moduleName: string) => {
+            if (moduleName === "process") throw new Error("Module \'process\' is not allowed in the sandbox.");
+            if (moduleName === "fs") return sandboxFs;
+            if (moduleName === "fs/promises") return sandboxFsp;
+            if (moduleName === "fs-extra") return sandboxFs;
+            if (moduleName === "axios") return proxiedAxios;
+            return realRequire(moduleName);
+          };
 
-    const { sandboxFs, sandboxFsp } = createSandboxedFs(tempDir);
+          const SANDBOX_ENV: Record<string, string | undefined> = {
+            NODE_ENV: process.env.NODE_ENV,
+            TZ: process.env.TZ,
+          };
 
-    const sandboxRequire = (moduleName: string) => {
-      // Blokir require('process') — bypass paling umum untuk env vars
-      if (moduleName === "process") {
-        throw new Error("Module 'process' is not allowed in the sandbox.");
-      }
-      // Inject sandboxed fs — hanya bisa akses tempDir
-      if (moduleName === "fs") return sandboxFs;
-      if (moduleName === "fs/promises") return sandboxFsp;
-      if (moduleName === "fs-extra") {
-        // fs-extra juga perlu dibatasi — return sandboxFs agar method-nya terbatas
-        return sandboxFs;
-      }
-      if (moduleName === "axios") return proxiedAxios;
-      return realRequire(moduleName);
-    };
-    
-    // Env vars yang boleh diakses dari snippet (whitelist ketat)
-    const SANDBOX_ENV: Record<string, string | undefined> = {
-      NODE_ENV: process.env.NODE_ENV,
-      TZ: process.env.TZ,
-      // Tambah di sini kalau snippet butuh env var publik tertentu
-      // JANGAN tambah: DATABASE_URL, SUPERADMIN_*, PROXY_WORKER_KEY, dll
-    };
+          const sandbox: Record<string, unknown> = {
+            console: fakeConsole,
+            require: sandboxRequire,
+            process: {
+              env: SANDBOX_ENV,
+              argv: [],
+              version: process.version,
+              platform: process.platform,
+              cwd: () => process.cwd(),
+              exit: (c?: number) => { logs.push(`[process.exit(${c ?? 0}) called]`); throw new Error("__EXIT__"); },
+              stdout: { write: (s: string) => { logs.push(s); sendEvent({ type: "log", text: s }); return true; } },
+              stderr: { write: (s: string) => { errors.push(s); sendEvent({ type: "error", text: s }); return true; } },
+              nextTick: (fn: () => void) => NativePromise.resolve().then(fn),
+            },
+            Buffer, URL, URLSearchParams, TextEncoder, TextDecoder,
+            AbortController, AbortSignal, Promise,
+            setTimeout, clearTimeout, setInterval, clearInterval,
+            setImmediate, clearImmediate, queueMicrotask,
+            fetch: proxiedFetch,
+            JSON, Math, Date, Error, TypeError, RangeError,
+            SyntaxError, ReferenceError, EvalError, URIError,
+            parseInt, parseFloat, isNaN, isFinite,
+            Number, String, Boolean, Array, Object, Symbol, BigInt,
+            Map, Set, WeakMap, WeakSet, Proxy, Reflect, RegExp,
+            encodeURIComponent, decodeURIComponent, encodeURI, decodeURI,
+            atob: (s: string) => Buffer.from(s, "base64").toString("utf8"),
+            btoa: (s: string) => Buffer.from(s, "utf8").toString("base64"),
+            Uint8Array, Int8Array, Uint16Array, Int16Array,
+            Uint32Array, Int32Array, Float32Array, Float64Array,
+            ArrayBuffer, DataView,
+            module: { exports: {} },
+            exports: {},
+            __dirname: tempDir,
+            __filename: path.join(tempDir, "snippet.js"),
+            __tmpdir: tempDir,
+            __tempdir: tempDir,
+          };
+          sandbox.global = sandbox;
+          sandbox.globalThis = sandbox;
+          Object.defineProperty(sandbox, "constructor", { value: undefined, writable: false });
+          Object.freeze(sandbox.process);
 
-    const sandbox: Record<string, unknown> = {
-      console: fakeConsole,
-      require: sandboxRequire,
-      process: {
-        env: SANDBOX_ENV,
-        argv: [],
-        version: process.version,
-        platform: process.platform,
-        cwd: () => process.cwd(),
-        exit: (c?: number) => {
-          logs.push(`[process.exit(${c ?? 0}) called]`);
-          throw new Error("__EXIT__");
-        },
-        stdout: { write: (s: string) => { logs.push(s); sendEvent({ type: "log", text: s }); return true; } },
-        stderr: { write: (s: string) => { errors.push(s); hasError = true; sendEvent({ type: "error", text: s }); return true; } },
-        nextTick: (fn: () => void) => NativePromise.resolve().then(fn),
-      },
-      Buffer, URL, URLSearchParams, TextEncoder, TextDecoder,
-      AbortController, AbortSignal, Promise,
-      setTimeout, clearTimeout, setInterval, clearInterval,
-      setImmediate, clearImmediate, queueMicrotask,
-      fetch: proxiedFetch,
-      JSON, Math, Date, Error, TypeError, RangeError,
-      SyntaxError, ReferenceError, EvalError, URIError,
-      parseInt, parseFloat, isNaN, isFinite,
-      Number, String, Boolean, Array, Object, Symbol, BigInt,
-      Map, Set, WeakMap, WeakSet, Proxy, Reflect, RegExp,
-      encodeURIComponent, decodeURIComponent, encodeURI, decodeURI,
-      atob: (s: string) => Buffer.from(s, "base64").toString("utf8"),
-      btoa: (s: string) => Buffer.from(s, "utf8").toString("base64"),
-      Uint8Array, Int8Array, Uint16Array, Int16Array,
-      Uint32Array, Int32Array, Float32Array, Float64Array,
-      ArrayBuffer, DataView,
-      module: { exports: {} },
-      exports: {},
-      __dirname: tempDir,
-      __filename: path.join(tempDir, "snippet.js"),
-      __tmpdir: tempDir,
-      __tempdir: tempDir,
-    };
-    sandbox.global = sandbox;
-    sandbox.globalThis = sandbox;
-    // Pastikan tidak bisa escape via sandbox.constructor atau prototype chain
-    Object.defineProperty(sandbox, "constructor", { value: undefined, writable: false });
-    // Freeze process object di sandbox supaya tidak bisa di-replace
-    Object.freeze(sandbox.process);
+          vm.createContext(sandbox);
 
-    vm.createContext(sandbox);
+          const autoAwaitLastCall = (src: string): string => {
+            const lines = src.split("\n");
+            for (let i = lines.length - 1; i >= 0; i--) {
+              const trimmed = lines[i].trim();
+              if (!trimmed || trimmed.startsWith("//") || trimmed.startsWith("*")) continue;
+              if (
+                /^[A-Za-z_$][\w$.]*\s*\(/.test(trimmed) &&
+                !/^(await|return|const|let|var|if|for|while|throw)\b/.test(trimmed)
+              ) {
+                lines[i] = lines[i].replace(trimmed, `await ${trimmed}`);
+              }
+              break;
+            }
+            return lines.join("\n");
+          };
 
-    const autoAwaitLastCall = (src: string): string => {
-      const lines = src.split("\n");
-      for (let i = lines.length - 1; i >= 0; i--) {
-        const trimmed = lines[i].trim();
-        if (!trimmed || trimmed.startsWith("//") || trimmed.startsWith("*")) continue;
-        if (
-          /^[A-Za-z_$][\w$.]*\s*\(/.test(trimmed) &&
-          !/^(await|return|const|let|var|if|for|while|throw)\b/.test(trimmed)
-        ) {
-          lines[i] = lines[i].replace(trimmed, `await ${trimmed}`);
-        }
-        break;
-      }
-      return lines.join("\n");
-    };
+          const transformed = transformImports(code);
+          const processedCode = autoAwaitLastCall(transformed);
 
-    const transformed = transformImports(code);
-    const processedCode = autoAwaitLastCall(transformed);
-
-    const wrappedCode = `
+          const wrappedCode = `
 (async () => {
   try {
 ${processedCode}
@@ -569,64 +567,68 @@ ${processedCode}
 })();
 `;
 
-    const TIMEOUT_MS = 55000;
-    const deadline = Date.now() + TIMEOUT_MS;
+          const TIMEOUT_MS = 55000;
+          const deadline = Date.now() + TIMEOUT_MS;
 
-    try {
-      const script = new vm.Script(wrappedCode, { filename: "snippet.js" });
-      const result = script.runInContext(sandbox);
+          try {
+            const script = new vm.Script(wrappedCode, { filename: "snippet.js" });
+            const result = script.runInContext(sandbox);
 
-      if (result && typeof (result as Promise<unknown>).then === "function") {
-        await NativePromise.race([
-          result as Promise<unknown>,
-          new NativePromise<void>((_, reject) =>
-            setTimeout(() => reject(new Error("Execution timed out after 55 seconds")), deadline - Date.now())
-          ),
-        ]);
-      }
+            if (result && typeof (result as Promise<unknown>).then === "function") {
+              await NativePromise.race([
+                result as Promise<unknown>,
+                new NativePromise<void>((_, reject) =>
+                  setTimeout(() => reject(new Error("Execution timed out after 55 seconds")), deadline - Date.now())
+                ),
+              ]);
+            }
 
-      let lastCount = logs.length + errors.length;
-      let stableRounds = 0;
-      while (Date.now() < deadline) {
-        await new NativePromise<void>(r => setTimeout(r, 80));
-        const current = logs.length + errors.length;
-        if (current === lastCount) {
-          stableRounds++;
-          if (stableRounds >= 3) break;
-        } else {
-          stableRounds = 0;
-          lastCount = current;
+            // Tunggu sebentar untuk async ops yang masih jalan (setTimeout, dll)
+            let lastCount = logs.length + errors.length;
+            let stableRounds = 0;
+            while (Date.now() < deadline) {
+              await new NativePromise<void>(r => setTimeout(r, 80));
+              const current = logs.length + errors.length;
+              if (current === lastCount) {
+                stableRounds++;
+                if (stableRounds >= 3) break;
+              } else {
+                stableRounds = 0;
+                lastCount = current;
+              }
+            }
+          } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : String(e);
+            if (msg !== "__EXIT__") {
+              const errText = "ExecutionError: " + formatError(e);
+              errors.push(errText);
+              sendEvent({ type: "error", text: errText });
+            }
+          }
+
+          const elapsed = Date.now() - startTime;
+          if (logs.length === 0 && errors.length === 0) {
+            sendEvent({ type: "log", text: "// Code executed successfully with no console output." });
+          }
+          sendEvent({ type: "done", elapsed, hasError: errors.length > 0 });
+
+        } catch (e: unknown) {
+          sendEvent({ type: "error", text: `ServerError: ${e instanceof Error ? e.message : String(e)}` });
+          sendEvent({ type: "done", elapsed: 0, hasError: true });
         }
-      }
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (msg !== "__EXIT__") {
-        errors.push("ExecutionError: " + formatError(e));
-        hasError = true;
-        sendEvent({ type: "error", text: "ExecutionError: " + formatError(e) });
-      }
-    }
 
-    const elapsed = Date.now() - startTime;
+        controller.close();
+      },
+    });
 
-    // Kirim event "done" lalu tutup stream
-    if (logs.length === 0 && errors.length === 0) {
-      sendEvent({ type: "log", text: "// Code executed successfully with no console output." });
-    }
-    sendEvent({ type: "done", elapsed, hasError: errors.length > 0 });
-    streamController!.close();
-
-  })(); // tutup async IIFE — eksekusi jalan di background, stream langsung dikirim
-
-  // Kembalikan SSE response segera — logs mengalir real-time saat script jalan
-  return new Response(stream, {
-    headers: {
-      "Content-Type":  "text/event-stream",
-      "Cache-Control": "no-cache",
-      "Connection":    "keep-alive",
-      "X-Accel-Buffering": "no",
-    },
-  });
+    return new Response(stream, {
+      headers: {
+        "Content-Type":      "text/event-stream",
+        "Cache-Control":     "no-cache, no-transform",
+        "Connection":        "keep-alive",
+        "X-Accel-Buffering": "no",
+      },
+    });
 
   } catch (e: unknown) {
     return NextResponse.json({
