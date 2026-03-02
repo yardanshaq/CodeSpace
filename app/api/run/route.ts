@@ -126,15 +126,30 @@ async function getProxyDomains(): Promise<string[]> {
   try {
     const rows = await prisma.proxyDomain.findMany({ select: { domain: true } });
     _proxyDomainsCache = rows.map((r: { domain: string }) => r.domain.toLowerCase());
-    _proxyCacheExpiry = Date.now() + 60_000; // cache 60 detik
+    _proxyCacheExpiry = Date.now() + 60_000;
   } catch {
-    // Kalau DB error, pakai cache lama (fallback ke env jika cache kosong)
     if (_proxyDomainsCache.length === 0) {
       _proxyDomainsCache = (process.env.PROXY_DOMAINS || "")
         .split(",").map(d => d.trim().toLowerCase()).filter(Boolean);
     }
   }
   return _proxyDomainsCache;
+}
+
+// Refresh cache di background tanpa blocking request
+function refreshProxyDomainsBackground() {
+  if (Date.now() < _proxyCacheExpiry) return; // masih valid, skip
+  prisma.proxyDomain.findMany({ select: { domain: true } })
+    .then(rows => {
+      _proxyDomainsCache = rows.map((r: { domain: string }) => r.domain.toLowerCase());
+      _proxyCacheExpiry = Date.now() + 60_000;
+    })
+    .catch(() => {
+      if (_proxyDomainsCache.length === 0) {
+        _proxyDomainsCache = (process.env.PROXY_DOMAINS || "")
+          .split(",").map(d => d.trim().toLowerCase()).filter(Boolean);
+      }
+    });
 }
 
 function shouldProxySync(url: string, domains: string[]): boolean {
@@ -493,7 +508,9 @@ export async function POST(req: NextRequest) {
 
           const startTime = Date.now();
           const NativePromise = Promise;
-          const proxyDomains = await getProxyDomains();
+          // Pakai cache langsung (tidak blocking) — refresh DB di background
+          refreshProxyDomainsBackground();
+          const proxyDomains = _proxyDomainsCache;
           const proxiedAxios = createProxiedAxios(proxyDomains);
           const proxiedFetch = createProxyFetch(proxyDomains);
           const { sandboxFs, sandboxFsp } = createSandboxedFs(tempDir);
