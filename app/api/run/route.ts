@@ -406,10 +406,7 @@ export async function POST(req: NextRequest) {
                 include: { globalFile: { select: { name: true, data: true } } },
               });
               for (const a of attachments) {
-                // Sanitize nama file — cegah path traversal (../../etc/passwd)
-                const safeAName = path.basename(a.globalFile.name).replace(/[^\w.-]/g, "_");
-                if (!safeAName || safeAName.startsWith(".")) continue;
-                fs.writeFileSync(path.join(tempDir, safeAName), a.globalFile.data);
+                fs.writeFileSync(path.join(tempDir, a.globalFile.name), a.globalFile.data);
               }
             } catch (e) {
               console.warn("Warning: failed to load snippet attachments:", e);
@@ -419,9 +416,7 @@ export async function POST(req: NextRequest) {
           if (Array.isArray(files) && files.length > 0) {
             for (const f of files as { name: string; data: string }[]) {
               if (!f.name || !f.data) continue;
-              const safeFName = path.basename(f.name).replace(/[^\w.-]/g, "_");
-              if (!safeFName || safeFName.startsWith(".")) continue;
-              fs.writeFileSync(path.join(tempDir, safeFName), Buffer.from(f.data, "base64"));
+              fs.writeFileSync(path.join(tempDir, path.basename(f.name)), Buffer.from(f.data, "base64"));
             }
           }
 
@@ -492,8 +487,9 @@ export async function POST(req: NextRequest) {
             process: {
               env: SANDBOX_ENV,
               argv: [],
-              // version & platform dihapus — bisa dipakai fingerprint server
-              cwd: () => "/sandbox",  // fake path, tidak bocorkan dir real
+              version: process.version,
+              platform: process.platform,
+              cwd: () => process.cwd(),
               exit: (c?: number) => { logs.push(`[process.exit(${c ?? 0}) called]`); throw new Error("__EXIT__"); },
               stdout: { write: (s: string) => { logs.push(s); sendEvent({ type: "log", text: s }); return true; } },
               stderr: { write: (s: string) => { errors.push(s); sendEvent({ type: "error", text: s }); return true; } },
@@ -517,24 +513,16 @@ export async function POST(req: NextRequest) {
             ArrayBuffer, DataView,
             module: { exports: {} },
             exports: {},
-            // Fake paths — tidak ekspos path real server (username OS, struktur dir)
-            __dirname: "/sandbox/tmp",
-            __filename: "/sandbox/tmp/snippet.js",
-            __tmpdir: "/sandbox/tmp",
-            __tempdir: "/sandbox/tmp",
+            __dirname: tempDir,
+            __filename: path.join(tempDir, "snippet.js"),
+            __tmpdir: tempDir,
+            __tempdir: tempDir,
           };
-               // TIDAK ekspos global/globalThis
+          sandbox.global = sandbox;
+          sandbox.globalThis = sandbox;
           Object.defineProperty(sandbox, "constructor", { value: undefined, writable: false });
           Object.freeze(sandbox.process);
 
-          // Blokir Function constructor dan eval — teknik paling umum bypass vm sandbox
-          sandbox.Function = function() { throw new Error("Function constructor is not allowed in the sandbox."); };
-          Object.freeze(sandbox.Function);
-          sandbox.eval = () => { throw new Error("eval() is not allowed in the sandbox."); };
-
-          // codeGeneration: {strings: false} TIDAK dipakai karena membreak module
-          // yang pakai eval internal (cheerio, htmlparser2, dll).
-          // Perlindungan cukup dari sandbox.Function dan sandbox.eval di atas.
           vm.createContext(sandbox);
 
           const autoAwaitLastCall = (src: string): string => {
@@ -625,9 +613,7 @@ ${processedCode}
           sendEvent({ type: "done", elapsed, hasError: errors.length > 0 });
 
         } catch (e: unknown) {
-          // Jangan ekspos e.message ke client — bisa bocorkan path, konfigurasi, dll
-          console.error("Run route ServerError:", e);
-          sendEvent({ type: "error", text: "An internal server error occurred." });
+          sendEvent({ type: "error", text: `ServerError: ${e instanceof Error ? e.message : String(e)}` });
           sendEvent({ type: "done", elapsed: 0, hasError: true });
         }
 
