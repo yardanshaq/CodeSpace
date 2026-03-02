@@ -30,7 +30,6 @@ const CATEGORIES = ["AI", "Anime", "Converter", "Downloader", "Generator", "Othe
 
 export default function PostPage() {
   const router = useRouter();
-  // Langsung pakai cache → tidak ada loading flash saat refresh
   const [user, setUser] = useState<User | null>(() => {
     const c = getCachedUser();
     return c ? { id: c.id ?? "", username: c.username, role: c.role } : null;
@@ -100,32 +99,15 @@ export default function PostPage() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ctrl+S — save form
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
         e.preventDefault();
         if (showCreateModal) handleCreateSnippet();
         else if (showEditModal) handleEditSnippet();
       }
-      // Esc — tutup modal aktif
-      if (e.key === "Escape") {
-        if (showRunModal) setShowRunModal(false);
-        else if (showEditModal) { setShowEditModal(false); setEditSnippet(null); }
-        else if (showCreateModal) setShowCreateModal(false);
-      }
-      // Ctrl+C — copy run output saat run modal terbuka
-      if ((e.ctrlKey || e.metaKey) && e.key === "c" && showRunModal && runOutput) {
-        const sel = window.getSelection();
-        if (!sel || sel.toString().length === 0) {
-          e.preventDefault();
-          navigator.clipboard.writeText(runOutput);
-          setCopiedOutput(true);
-          setTimeout(() => setCopiedOutput(false), 2000);
-        }
-      }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [showCreateModal, showEditModal, showRunModal, runOutput, form, editSnippet]);
+  }, [showCreateModal, showEditModal, form, editSnippet]);
 
   const isMember = user?.role === "MEMBER";
   const isSuperAdmin = user?.role === "SUPERADMIN";
@@ -219,15 +201,14 @@ export default function PostPage() {
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() ?? "";
 
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const jsonStr = line.slice(6).trim();
-          if (!jsonStr) continue;
+        for (const part of parts) {
+          const dataLine = part.split("\n").find((l: string) => l.startsWith("data: "));
+          if (!dataLine) continue;
           try {
-            const ev = JSON.parse(jsonStr);
+            const ev = JSON.parse(dataLine.slice(6));
             if (ev.type === "done") {
               setRunElapsed(ev.elapsed || 0);
               setRunHasError(ev.hasError || false);
@@ -236,7 +217,7 @@ export default function PostPage() {
               setRunOutput(prev => prev ? prev + "\n" + ev.text : ev.text);
               if (ev.type === "error") setRunHasError(true);
             }
-          } catch { /* skip malformed line */ }
+          } catch { /* skip malformed */ }
         }
       }
     } catch (err: unknown) {
@@ -256,7 +237,6 @@ export default function PostPage() {
     <>
       <Navbar />
       <main className="main">
-        {/* Back button */}
         <button
           onClick={() => router.push("/")}
           className="btn btn-white"
@@ -268,7 +248,6 @@ export default function PostPage() {
           BACK
         </button>
 
-        {/* Header */}
         <div className="admin-header">
           <div>
             <div className="admin-title">
@@ -277,12 +256,10 @@ export default function PostPage() {
               </svg>
               {user.username.toUpperCase()}
             </div>
-            {/* Greeting seperti sebelumnya */}
             <div className="admin-subtitle">Welcome back, {user.username}</div>
           </div>
 
           <div className="admin-actions">
-            {/* SUPERADMIN: manage users + register */}
             {isSuperAdmin && (
               <>
                 <button className="btn btn-white btn-icon" onClick={() => router.push("/users")} title="Manage users">
@@ -299,8 +276,6 @@ export default function PostPage() {
                 </button>
               </>
             )}
-
-            {/* Create snippet — semua role */}
             <button className="btn btn-teal btn-icon" onClick={() => { setForm({ title: "", code: "", category: "Scrape", isPublic: true }); setFormError(""); setFormSuccess(""); setShowCreateModal(true); }} title="New snippet">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
@@ -309,7 +284,6 @@ export default function PostPage() {
           </div>
         </div>
 
-        {/* Snippets list */}
         {snippetsLoading ? (
           <PageLoader />
         ) : snippets.length === 0 ? (
@@ -342,7 +316,6 @@ export default function PostPage() {
                     {s.isPublic ? "PUBLIC" : "PRIVATE"}
                   </span>
                 </div>
-
                 <div className="admin-snippet-actions">
                   <button className="btn btn-yellow" onClick={() => handleRun(s)}>▶ RUN</button>
                   <button className="btn btn-teal" onClick={() => openEdit(s)}>✎ EDIT</button>
@@ -355,7 +328,7 @@ export default function PostPage() {
         )}
       </main>
 
-      {/* ─── CREATE MODAL ─── */}
+      {/* CREATE MODAL */}
       {showCreateModal && (
         <div className="modal-overlay" onClick={() => setShowCreateModal(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -388,7 +361,7 @@ export default function PostPage() {
         </div>
       )}
 
-      {/* ─── EDIT MODAL ─── */}
+      {/* EDIT MODAL */}
       {showEditModal && (
         <div className="modal-overlay" onClick={() => setShowEditModal(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -421,7 +394,7 @@ export default function PostPage() {
         </div>
       )}
 
-      {/* ─── REGISTER MODAL (SUPERADMIN only) ─── */}
+      {/* REGISTER MODAL */}
       {showRegisterModal && isSuperAdmin && (
         <div className="modal-overlay" onClick={() => setShowRegisterModal(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
@@ -443,7 +416,7 @@ export default function PostPage() {
         </div>
       )}
 
-      {/* ─── RUN MODAL ─── */}
+      {/* RUN MODAL */}
       {showRunModal && runSnippet && (
         <div className="modal-overlay" onClick={() => setShowRunModal(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 660 }}>
@@ -452,13 +425,17 @@ export default function PostPage() {
               <button onClick={() => setShowRunModal(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18 }}>✕</button>
             </div>
             <div className="modal-body">
-              {running ? (
-                <div className="run-output">Running on server...</div>
-              ) : (
-                <div className="run-output" style={{ color: runHasError ? "#ff6b6b" : "#4ade80" }}>{runOutput}</div>
+              <div className="run-output" style={{ color: runHasError ? "#ff6b6b" : "#4ade80", position: "relative" }}>
+                {runOutput || (running ? "" : "// No output")}
+                {running && (
+                  <span style={{ display: "inline-block", width: 8, height: 14, background: "#4ade80", marginLeft: 2, verticalAlign: "text-bottom", animation: "blink 1s step-end infinite" }} />
+                )}
+              </div>
+              {running && (
+                <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>⟳ Running on server...</div>
               )}
               {!running && runElapsed > 0 && (
-                <div style={{ fontSize: 11, color: "#888" }}>✓ Executed in {runElapsed}ms</div>
+                <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>✓ Executed in {runElapsed}ms</div>
               )}
             </div>
             <div className="modal-footer" style={{ justifyContent: "space-between" }}>
@@ -470,6 +447,13 @@ export default function PostPage() {
           </div>
         </div>
       )}
+
+      <style>{`
+        @keyframes blink {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0; }
+        }
+      `}</style>
     </>
   );
 }

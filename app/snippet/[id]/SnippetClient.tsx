@@ -83,7 +83,6 @@ function fileEmoji(mimeType: string): string {
   return "📦";
 }
 
-// Timeout untuk fetch snippet (ms) — cegah loading stuck selamanya
 const FETCH_TIMEOUT_MS = 10_000;
 
 export default function SnippetClient({ id }: { id: string }) {
@@ -104,32 +103,18 @@ export default function SnippetClient({ id }: { id: string }) {
   const lastUpdatedAt = useRef<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hasTracked = useRef(false);
-  // Safety: jika loading masih true setelah FETCH_TIMEOUT_MS, paksa dismiss
   const loadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchSnippet = useCallback(
     async (silent = false) => {
       if (!id) return;
-
-      // AbortController untuk timeout per-request
       const controller = new AbortController();
-      const timeoutId = setTimeout(
-        () => controller.abort(),
-        FETCH_TIMEOUT_MS
-      );
-
+      const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
       try {
-        const r = await fetch(`/api/snippets/${id}`, {
-          signal: controller.signal,
-        });
+        const r = await fetch(`/api/snippets/${id}`, { signal: controller.signal });
         clearTimeout(timeoutId);
-
-        if (!r.ok) {
-          if (!silent) setLoading(false);
-          return;
-        }
+        if (!r.ok) { if (!silent) setLoading(false); return; }
         const data: Snippet = await r.json();
-
         if (silent && lastUpdatedAt.current && data.updatedAt !== lastUpdatedAt.current) {
           setSnippet(data);
           lastUpdatedAt.current = data.updatedAt;
@@ -149,66 +134,32 @@ export default function SnippetClient({ id }: { id: string }) {
   useEffect(() => {
     if (!id || hasTracked.current) return;
     hasTracked.current = true;
-
     fetchSnippet(false);
-
-    // Hanya tambah view jika user ini belum pernah buka snippet ini.
-    // Pakai visitor ID unik yang disimpan di localStorage — tidak perlu server/socket.
     try {
       const VISITOR_KEY = "cs_visitor_id";
-      const VIEWS_KEY   = "cs_viewed";
-
+      const VIEWS_KEY = "cs_viewed";
       let visitorId = localStorage.getItem(VISITOR_KEY);
       if (!visitorId) {
         visitorId = Math.random().toString(36).slice(2) + Date.now().toString(36);
         localStorage.setItem(VISITOR_KEY, visitorId);
       }
-
-      const viewed  = new Set((localStorage.getItem(VIEWS_KEY) || "").split(",").filter(Boolean));
+      const viewed = new Set((localStorage.getItem(VIEWS_KEY) || "").split(",").filter(Boolean));
       const viewKey = `${visitorId}:${id}`;
-
       if (!viewed.has(viewKey)) {
         viewed.add(viewKey);
         localStorage.setItem(VIEWS_KEY, Array.from(viewed).join(","));
         fetch(`/api/snippets/${id}`, { method: "PATCH" });
       }
     } catch {
-      // localStorage tidak tersedia (private mode ekstrem) — fallback tetap track
       fetch(`/api/snippets/${id}`, { method: "PATCH" });
     }
-
     pollRef.current = setInterval(() => fetchSnippet(true), 3000);
-
-    // Safety timeout — kalau fetch hang, loading tetap dismiss setelah batas waktu
-    loadingTimerRef.current = setTimeout(() => {
-      setLoading(false);
-    }, FETCH_TIMEOUT_MS + 1000);
-
+    loadingTimerRef.current = setTimeout(() => setLoading(false), FETCH_TIMEOUT_MS + 1000);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
       if (loadingTimerRef.current) clearTimeout(loadingTimerRef.current);
     };
   }, [fetchSnippet, id]);
-
-  // Keyboard shortcuts: Esc = tutup run modal, Ctrl+C = copy output
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setShowRunModal(false);
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key === "c" && showRunModal && runOutput) {
-        const sel = window.getSelection();
-        if (!sel || sel.toString().length === 0) {
-          e.preventDefault();
-          navigator.clipboard.writeText(runOutput);
-          setCopiedOutput(true);
-          setTimeout(() => setCopiedOutput(false), 2000);
-        }
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [showRunModal, runOutput]);
 
   const handleCopy = () => {
     if (!snippet) return;
@@ -235,6 +186,7 @@ export default function SnippetClient({ id }: { id: string }) {
     setRunElapsed(0);
     setShowRunModal(true);
     setRunning(true);
+
     try {
       const res = await fetch("/api/run", {
         method: "POST",
@@ -244,20 +196,17 @@ export default function SnippetClient({ id }: { id: string }) {
 
       if (!res.body) throw new Error("No response body");
 
-      const reader  = res.body.getReader();
+      const reader = res.body.getReader();
       const decoder = new TextDecoder();
-      let   buffer  = "";
+      let buffer = "";
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-
-        // Proses baris satu per satu — lebih robust dari split("\n\n")
-        // karena chunk bisa datang setengah-setengah atau beberapa event sekaligus
         const lines = buffer.split("\n");
-        buffer = lines.pop() ?? ""; // baris terakhir mungkin belum lengkap
+        buffer = lines.pop() ?? "";
 
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
@@ -273,7 +222,7 @@ export default function SnippetClient({ id }: { id: string }) {
               setRunOutput(prev => prev ? prev + "\n" + ev.text : ev.text);
               if (ev.type === "error") setRunHasError(true);
             }
-          } catch { /* skip malformed/incomplete line */ }
+          } catch { /* skip malformed event */ }
         }
       }
     } catch (err: unknown) {
@@ -313,11 +262,7 @@ export default function SnippetClient({ id }: { id: string }) {
       <Navbar />
       <main className="main">
 
-        <button
-          className="btn-back"
-          onClick={() => router.back()}
-          style={{ marginBottom: 20 }}
-        >
+        <button className="btn-back" onClick={() => router.back()} style={{ marginBottom: 20 }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 18 9 12 15 6"/>
           </svg>
@@ -459,10 +404,14 @@ export default function SnippetClient({ id }: { id: string }) {
               <button onClick={() => setShowRunModal(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: "var(--text)" }}>✕</button>
             </div>
             <div className="modal-body">
-              {running ? (
-                <div className="run-output">Running on server...</div>
-              ) : (
-                <div className="run-output" style={{ color: runHasError ? "#ff6b6b" : "#4ade80" }}>{runOutput}</div>
+              <div className="run-output" style={{ color: runHasError ? "#ff6b6b" : "#4ade80", position: "relative" }}>
+                {runOutput || (running ? "" : "// No output")}
+                {running && (
+                  <span style={{ display: "inline-block", width: 8, height: 14, background: "#4ade80", marginLeft: 2, verticalAlign: "text-bottom", animation: "blink 1s step-end infinite" }} />
+                )}
+              </div>
+              {running && (
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>⟳ Running on server...</div>
               )}
               {!running && runElapsed > 0 && (
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>✓ Executed in {runElapsed}ms</div>
@@ -479,10 +428,8 @@ export default function SnippetClient({ id }: { id: string }) {
       )}
 
       <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: .4; }
-        }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
       `}</style>
     </>
   );
