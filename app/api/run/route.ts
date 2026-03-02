@@ -222,38 +222,64 @@ function createProxiedAxios(proxyDomains: string[] = []) {
 function createProxyFetch(proxyDomains: string[] = []) {
   const PROXY_URL = process.env.PROXY_WORKER_URL
   const PROXY_KEY = process.env.PROXY_WORKER_KEY
-  if (!PROXY_URL || !PROXY_KEY) return globalThis.fetch
-
-  const proxyHostname = new URL(PROXY_URL).hostname
+  const proxyHostname = PROXY_URL ? new URL(PROXY_URL).hostname : ""
 
   return async function proxyFetch(input: any, init?: any): Promise<Response> {
     const targetUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
-    // Skip kalau URL adalah proxy itu sendiri
-    if (targetUrl.includes(proxyHostname)) return globalThis.fetch(input, init)
-    // Skip kalau domain tidak perlu diproxy dan tidak ada header force-proxy
     const forceProxy = init?.headers?.['x-use-proxy'] || (init?.headers instanceof Headers && init.headers.get('x-use-proxy'))
-    if (!shouldProxySync(targetUrl, proxyDomains) && !forceProxy) return globalThis.fetch(input, init)
+    const useProxy = PROXY_URL && PROXY_KEY && (shouldProxySync(targetUrl, proxyDomains) || forceProxy) && !targetUrl.includes(proxyHostname)
 
-    const method = (init?.method || 'GET').toUpperCase()
-    const originalHeaders: Record<string, string> = {}
-    if (init?.headers) {
-      const h = new Headers(init.headers)
-      h.forEach((v: string, k: string) => { originalHeaders[k] = v })
+    if (useProxy) {
+      const method = (init?.method || 'GET').toUpperCase()
+      const originalHeaders: Record<string, string> = {}
+      if (init?.headers) {
+        const h = new Headers(init.headers)
+        h.forEach((v: string, k: string) => { originalHeaders[k] = v })
+      }
+      let bodyData: string | null = null
+      if (init?.body) bodyData = typeof init.body === 'string' ? init.body : String(init.body)
+
+      const proxyRes = await globalThis.fetch(PROXY_URL!, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-proxy-key': PROXY_KEY! },
+        body: JSON.stringify({ url: targetUrl, method, headers: originalHeaders, data: bodyData }),
+      })
+      const w = await proxyRes.json() as any
+      return new Response(w.body ?? "", {
+        status : w.status ?? proxyRes.status,
+        headers: { 'content-type': w.contentType || 'text/plain' },
+      })
     }
 
-    let bodyData: string | null = null
-    if (init?.body) bodyData = typeof init.body === 'string' ? init.body : String(init.body)
+    // Direct fetch — pipe native stream ke TransformStream baru agar
+    // res.body.getReader() bisa dipakai dari dalam VM sandbox.
+    // Native ReadableStream dari host context tidak bisa di-read lintas VM boundary,
+    // tapi TransformStream yang kita buat di sini bisa karena sama contextnya.
+    const nativeRes = await globalThis.fetch(input, init)
+    const { readable, writable } = new TransformStream()
+    const writer = writable.getWriter()
+    const nativeReader = nativeRes.body?.getReader()
 
-    const proxyRes = await globalThis.fetch(PROXY_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-proxy-key': PROXY_KEY },
-      body: JSON.stringify({ url: targetUrl, method, headers: originalHeaders, data: bodyData }),
-    })
+    if (!nativeReader) {
+      writer.close()
+    } else {
+      // Pipe di background — tidak blocking
+      ;(async () => {
+        try {
+          while (true) {
+            const { done, value } = await nativeReader.read()
+            if (done) { writer.close(); break }
+            await writer.write(new Uint8Array(value))
+          }
+        } catch (e) {
+          writer.abort(e)
+        }
+      })()
+    }
 
-    const w = await proxyRes.json() as any
-    return new Response(w.body, {
-      status: w.status ?? proxyRes.status,
-      headers: { 'content-type': w.contentType || 'text/plain' },
+    return new Response(readable, {
+      status : nativeRes.status,
+      headers: nativeRes.headers,
     })
   }
 }
@@ -544,6 +570,7 @@ export async function POST(req: NextRequest) {
               nextTick: (fn: () => void) => NativePromise.resolve().then(fn),
             },
             Buffer, URL, URLSearchParams, TextEncoder, TextDecoder,
+            ReadableStream, WritableStream, TransformStream,
             AbortController, AbortSignal, Promise,
             setTimeout, clearTimeout, setInterval, clearInterval,
             setImmediate, clearImmediate, queueMicrotask,
