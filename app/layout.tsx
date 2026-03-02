@@ -5,6 +5,17 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 export const metadata: Metadata = {
   title: "CodeSpace",
   description: "A place to share simple snippets",
+  openGraph: {
+    title: "CodeSpace",
+    description: "A place to share simple snippets",
+    images: [
+      {
+        url: "https://cdn.nekohime.site/file/E_fVqMJ-.png",
+        width: 1280,
+        height: 640,
+      },
+    ],
+  },
 };
 
 export const viewport = {
@@ -35,7 +46,7 @@ export default function RootLayout({
             __html: `(function(){try{var t=localStorage.getItem('theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}})();`,
           }}
         />
-        <link rel="icon" type="image/x-icon" href="https://cdn.nekohime.site/file/E_fVqMJ-.png" />
+        <link rel="icon" type="image/x-icon" href="https://cdn.nekohime.site/file/sOyPp0Jp.png" />
         <link rel="icon" type="image/png" sizes="32x32" href="https://cdn.nekohime.site/file/R-r5NgoD.png" />
         <link rel="icon" type="image/png" sizes="16x16" href="https://cdn.nekohime.site/file/R-r5NgoD.png" />
         <link rel="apple-touch-icon" sizes="180x180" href="https://cdn.nekohime.site/file/sOyPp0Jp.png" />
