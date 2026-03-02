@@ -99,25 +99,55 @@ function tryParseJson(str: string) {
   try { return JSON.parse(str) } catch { return null }
 }
 
-// Domain yang wajib diproxy (Cloudflare protected sites).
-// Snippet bisa tambah header x-use-proxy: "1" untuk force proxy request tertentu.
-// Semua domain lain (API publik, dll) langsung tanpa proxy.
-const CF_DOMAINS = (process.env.PROXY_DOMAINS || "")
-  .split(",")
-  .map(d => d.trim().toLowerCase())
-  .filter(Boolean);
+// Kumpulkan nilai env sensitif sekali saat server start — bukan per-request
+// Dipakai untuk redact output snippet agar env vars tidak bocor ke client
+const SENSITIVE_ENV_VALUES = Object.entries(process.env)
+  .filter(([key]) => !["NODE_ENV", "TZ", "PATH", "HOME", "USER", "SHELL", "LANG", "LC_ALL"].includes(key))
+  .map(([, v]) => v)
+  .filter((v): v is string => typeof v === "string" && v.length >= 8);
 
-function shouldProxy(url: string): boolean {
-  if (!url) return false;
+const sanitizeOutput = (text: string): string => {
+  let result = text;
+  for (const secret of SENSITIVE_ENV_VALUES) {
+    if (result.includes(secret)) {
+      result = result.split(secret).join("[REDACTED]");
+    }
+  }
+  return result;
+};
+
+// Cache proxy domains dari DB — refresh setiap 60 detik
+// sehingga tidak perlu restart server saat tambah/hapus domain
+let _proxyDomainsCache: string[] = [];
+let _proxyCacheExpiry = 0;
+
+async function getProxyDomains(): Promise<string[]> {
+  if (Date.now() < _proxyCacheExpiry) return _proxyDomainsCache;
+  try {
+    const rows = await prisma.proxyDomain.findMany({ select: { domain: true } });
+    _proxyDomainsCache = rows.map((r: { domain: string }) => r.domain.toLowerCase());
+    _proxyCacheExpiry = Date.now() + 60_000; // cache 60 detik
+  } catch {
+    // Kalau DB error, pakai cache lama (fallback ke env jika cache kosong)
+    if (_proxyDomainsCache.length === 0) {
+      _proxyDomainsCache = (process.env.PROXY_DOMAINS || "")
+        .split(",").map(d => d.trim().toLowerCase()).filter(Boolean);
+    }
+  }
+  return _proxyDomainsCache;
+}
+
+function shouldProxySync(url: string, domains: string[]): boolean {
+  if (!url || domains.length === 0) return false;
   try {
     const hostname = new URL(url).hostname.toLowerCase();
-    return CF_DOMAINS.some(d => hostname === d || hostname.endsWith("." + d));
+    return domains.some(d => hostname === d || hostname.endsWith("." + d));
   } catch {
     return false;
   }
 }
 
-function createProxiedAxios() {
+function createProxiedAxios(proxyDomains: string[] = []) {
   const originalAxios = MODULE_MAP['axios'] as any
   if (!originalAxios) return originalAxios
 
@@ -133,8 +163,8 @@ function createProxiedAxios() {
     const targetUrl = config.url || ''
     // Skip kalau URL adalah proxy itu sendiri
     if (targetUrl.includes(proxyHostname)) return config
-    // Skip kalau domain tidak ada di CF_DOMAINS dan tidak ada header force-proxy
-    if (!shouldProxy(targetUrl) && !config.headers?.['x-use-proxy']) return config
+    // Skip kalau domain tidak perlu diproxy dan tidak ada header force-proxy
+    if (!shouldProxySync(targetUrl, proxyDomains) && !config.headers?.['x-use-proxy']) return config
 
     const method = (config.method || 'GET').toUpperCase()
     const originalHeaders = { ...config.headers }
@@ -174,7 +204,7 @@ function createProxiedAxios() {
   return proxied
 }
 
-function createProxyFetch() {
+function createProxyFetch(proxyDomains: string[] = []) {
   const PROXY_URL = process.env.PROXY_WORKER_URL
   const PROXY_KEY = process.env.PROXY_WORKER_KEY
   if (!PROXY_URL || !PROXY_KEY) return globalThis.fetch
@@ -187,7 +217,7 @@ function createProxyFetch() {
     if (targetUrl.includes(proxyHostname)) return globalThis.fetch(input, init)
     // Skip kalau domain tidak perlu diproxy dan tidak ada header force-proxy
     const forceProxy = init?.headers?.['x-use-proxy'] || (init?.headers instanceof Headers && init.headers.get('x-use-proxy'))
-    if (!shouldProxy(targetUrl) && !forceProxy) return globalThis.fetch(input, init)
+    if (!shouldProxySync(targetUrl, proxyDomains) && !forceProxy) return globalThis.fetch(input, init)
 
     const method = (init?.method || 'GET').toUpperCase()
     const originalHeaders: Record<string, string> = {}
@@ -432,39 +462,40 @@ export async function POST(req: NextRequest) {
 
           const fakeConsole = {
             log: (...args: unknown[]) => {
-              const text = fmtArgs(args); logs.push(text);
+              const text = sanitizeOutput(fmtArgs(args)); logs.push(text);
               sendEvent({ type: "log", text });
             },
             error: (...args: unknown[]) => {
-              const text = "[error] " + fmtArgs(args); errors.push(text);
+              const text = "[error] " + sanitizeOutput(fmtArgs(args)); errors.push(text);
               sendEvent({ type: "error", text });
             },
             warn: (...args: unknown[]) => {
-              const text = "[warn] " + args.map(String).join(" "); logs.push(text);
+              const text = "[warn] " + sanitizeOutput(args.map(String).join(" ")); logs.push(text);
               sendEvent({ type: "warn", text });
             },
             info: (...args: unknown[]) => {
-              const text = "[info] " + fmtArgs(args); logs.push(text);
+              const text = "[info] " + sanitizeOutput(fmtArgs(args)); logs.push(text);
               sendEvent({ type: "log", text });
             },
             dir: (...args: unknown[]) => {
-              const text = args.map((a) => JSON.stringify(a, null, 2)).join(" "); logs.push(text);
+              const text = sanitizeOutput(args.map((a) => JSON.stringify(a, null, 2)).join(" ")); logs.push(text);
               sendEvent({ type: "log", text });
             },
             table: (...args: unknown[]) => {
-              const text = args.map((a) => JSON.stringify(a, null, 2)).join(" "); logs.push(text);
+              const text = sanitizeOutput(args.map((a) => JSON.stringify(a, null, 2)).join(" ")); logs.push(text);
               sendEvent({ type: "log", text });
             },
             debug: (...args: unknown[]) => {
-              const text = "[debug] " + args.map(String).join(" "); logs.push(text);
+              const text = "[debug] " + sanitizeOutput(args.map(String).join(" ")); logs.push(text);
               sendEvent({ type: "log", text });
             },
           };
 
           const startTime = Date.now();
           const NativePromise = Promise;
-          const proxiedAxios = createProxiedAxios();
-          const proxiedFetch = createProxyFetch();
+          const proxyDomains = await getProxyDomains();
+          const proxiedAxios = createProxiedAxios(proxyDomains);
+          const proxiedFetch = createProxyFetch(proxyDomains);
           const { sandboxFs, sandboxFsp } = createSandboxedFs(tempDir);
 
           const sandboxRequire = (moduleName: string) => {
@@ -489,10 +520,10 @@ export async function POST(req: NextRequest) {
               argv: [],
               version: process.version,
               platform: process.platform,
-              cwd: () => process.cwd(),
+              cwd: () => "/sandbox",
               exit: (c?: number) => { logs.push(`[process.exit(${c ?? 0}) called]`); throw new Error("__EXIT__"); },
-              stdout: { write: (s: string) => { logs.push(s); sendEvent({ type: "log", text: s }); return true; } },
-              stderr: { write: (s: string) => { errors.push(s); sendEvent({ type: "error", text: s }); return true; } },
+              stdout: { write: (s: string) => { const t = sanitizeOutput(s); logs.push(t); sendEvent({ type: "log", text: t }); return true; } },
+              stderr: { write: (s: string) => { const t = sanitizeOutput(s); errors.push(t); sendEvent({ type: "error", text: t }); return true; } },
               nextTick: (fn: () => void) => NativePromise.resolve().then(fn),
             },
             Buffer, URL, URLSearchParams, TextEncoder, TextDecoder,
@@ -517,10 +548,14 @@ export async function POST(req: NextRequest) {
             __filename: path.join(tempDir, "snippet.js"),
             __tmpdir: tempDir,
             __tempdir: tempDir,
+            // Blokir eval dan Function constructor — vektor utama escape sandbox
+            eval: undefined,
+            Function: undefined,
           };
           sandbox.global = sandbox;
           sandbox.globalThis = sandbox;
-          Object.defineProperty(sandbox, "constructor", { value: undefined, writable: false });
+
+          Object.defineProperty(sandbox, "constructor", { value: undefined, writable: false, configurable: false });
           Object.freeze(sandbox.process);
 
           vm.createContext(sandbox);
@@ -600,7 +635,7 @@ ${processedCode}
           } catch (e: unknown) {
             const msg = e instanceof Error ? e.message : String(e);
             if (msg !== "__EXIT__") {
-              const errText = "ExecutionError: " + formatError(e);
+              const errText = "ExecutionError: " + sanitizeOutput(formatError(e));
               errors.push(errText);
               sendEvent({ type: "error", text: errText });
             }
