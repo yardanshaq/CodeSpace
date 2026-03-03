@@ -12,11 +12,11 @@ export async function GET(
     const snippet =
       (await prisma.snippet.findUnique({
         where: { id: params.id },
-        select: { code: true, filename: true, isPublic: true },
+        select: { code: true, filename: true, isPublic: true, adminId: true },
       })) ??
       (await prisma.snippet.findUnique({
         where: { filename: params.id },
-        select: { code: true, filename: true, isPublic: true },
+        select: { code: true, filename: true, isPublic: true, adminId: true },
       }));
 
     if (!snippet) {
@@ -25,8 +25,10 @@ export async function GET(
 
     if (!snippet.isPublic) {
       const session = await getSession();
-      if (!session) {
-        return new NextResponse("Unauthorized", { status: 401 });
+      const isOwner = session?.id === snippet.adminId;
+      const isSuperAdmin = session?.role === "SUPERADMIN";
+      if (!session || (!isOwner && !isSuperAdmin)) {
+        return new NextResponse("Not found", { status: 404 });
       }
     }
 
