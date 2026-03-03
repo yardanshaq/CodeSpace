@@ -132,10 +132,32 @@ export default function PostPage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [showCreateModal, showEditModal, form, editSnippet]);
 
-  // Auto-scroll output ke bawah setiap kali ada output baru
+  // Smart scroll: hanya scroll kalau output datang sedikit-sedikit (streaming lambat)
+  // Output instant/besar sekaligus tidak di-scroll supaya user bisa baca dari atas
+  const userScrolledUp = useRef(false);
+  const prevOutputLen = useRef(0);
+
   useEffect(() => {
-    if (outputRef.current) {
-      outputRef.current.scrollTop = outputRef.current.scrollHeight;
+    const el = outputRef.current;
+    if (!el) return;
+    userScrolledUp.current = false;
+    prevOutputLen.current = 0;
+    const onScroll = () => {
+      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+      userScrolledUp.current = !atBottom;
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [showRunModal]);
+
+  useEffect(() => {
+    const el = outputRef.current;
+    if (!el || userScrolledUp.current) return;
+    const delta = runOutput.length - prevOutputLen.current;
+    prevOutputLen.current = runOutput.length;
+    // Hanya scroll kalau delta kecil (streaming) — bukan dump besar sekaligus
+    if (delta > 0 && delta < 300) {
+      el.scrollTop = el.scrollHeight;
     }
   }, [runOutput]);
 
