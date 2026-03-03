@@ -32,11 +32,13 @@ export async function generateMetadata({
         title:    true,
         category: true,
         filename: true,
+        isPublic: true,
         admin:    { select: { username: true } },
       },
     });
 
-    if (!snippet) return { title: "CodeSpace", description: "a place to share simple snippets" };
+    // Jangan bocorkan info snippet private di OG metadata
+    if (!snippet || !snippet.isPublic) return { title: "CodeSpace", description: "a place to share simple snippets" };
 
     const desc = `${snippet.category} snippet by ${snippet.admin.username} — ${snippet.filename}`;
 
@@ -69,8 +71,6 @@ export default async function CodePage({
   const id = searchParams.v;
   if (!id) redirect("/");
 
-  // Fetch snippet dan session di server — data sudah siap saat halaman dirender
-  // Client tidak perlu fetch lagi, langsung render konten tanpa loading screen
   const [snippet, session] = await Promise.all([
     prisma.snippet.findFirst({
       where: { OR: [{ id }, { filename: id }] },
@@ -79,19 +79,20 @@ export default async function CodePage({
     getSession(),
   ]);
 
-  // Private snippet: redirect ke home kalau tidak login
-  if (snippet && !snippet.isPublic && !session) {
-    redirect("/login");
+  // Private snippet: hanya owner atau SUPERADMIN yang boleh lihat
+  // Selain itu → tampilkan "SNIPPET NOT FOUND", bukan redirect ke login
+  let initialData = null;
+  if (snippet) {
+    if (snippet.isPublic) {
+      initialData = { ...snippet, attachments: snippet.attachments.map((a) => a.globalFile) };
+    } else {
+      const isOwner = session?.id === snippet.adminId;
+      const isSuperAdmin = session?.role === "SUPERADMIN";
+      if (isOwner || isSuperAdmin) {
+        initialData = { ...snippet, attachments: snippet.attachments.map((a) => a.globalFile) };
+      }
+    }
   }
 
-  // Cast ke any karena Prisma return nested type, sedangkan SnippetClient
-  // expect flat GlobalFile[] untuk attachments (sudah di-map di bawah)
-  const initialData = snippet
-    ? {
-        ...snippet,
-        attachments: snippet.attachments.map((a) => a.globalFile),
-      } as any
-    : null;
-
-  return <SnippetClient id={id} initialData={initialData} />;
+  return <SnippetClient id={id} initialData={initialData as any} />;
 }
