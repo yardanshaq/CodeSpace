@@ -85,11 +85,12 @@ function fileEmoji(mimeType: string): string {
 
 const FETCH_TIMEOUT_MS = 10_000;
 
-export default function SnippetClient({ id }: { id: string }) {
+export default function SnippetClient({ id, initialData }: { id: string; initialData?: Snippet | null }) {
   const router = useRouter();
 
-  const [snippet, setSnippet] = useState<Snippet | null>(null);
-  const [loading, setLoading] = useState(true);
+  // initialData dari server — kalau ada, langsung render tanpa loading screen
+  const [snippet, setSnippet] = useState<Snippet | null>(initialData ?? null);
+  const [loading, setLoading] = useState(!initialData);
   const [copied, setCopied] = useState(false);
 
   const [showRunModal, setShowRunModal] = useState(false);
@@ -117,11 +118,13 @@ export default function SnippetClient({ id }: { id: string }) {
         if (!r.ok) { if (!silent) setLoading(false); return; }
         const data: Snippet = await r.json();
         if (silent) {
-          // Update jika ada perubahan (bandingkan updatedAt)
-          // lastUpdatedAt bisa null saat pertama kali — tetap update
           if (!lastUpdatedAt.current || data.updatedAt !== lastUpdatedAt.current) {
+            // Ada perubahan konten snippet — update semua
             setSnippet(data);
             lastUpdatedAt.current = data.updatedAt;
+          } else {
+            // Konten tidak berubah tapi views bisa bertambah — update views saja
+            setSnippet(prev => prev ? { ...prev, views: data.views } : prev);
           }
         } else {
           setSnippet(data);
@@ -139,6 +142,10 @@ export default function SnippetClient({ id }: { id: string }) {
   useEffect(() => {
     if (!id || hasTracked.current) return;
     hasTracked.current = true;
+
+    // Kalau sudah ada initialData dari server, skip fetch pertama
+    // Hanya track view dan mulai polling untuk update
+    if (!initialData) fetchSnippet(false);
 
     // Tentukan apakah view perlu di-track SEBELUM fetch snippet
     // sehingga GET dan PATCH bisa jalan PARALLEL
@@ -162,8 +169,7 @@ export default function SnippetClient({ id }: { id: string }) {
       shouldTrackView = true;
     }
 
-    // Jalankan GET snippet dan PATCH views secara PARALLEL — tidak saling nunggu
-    fetchSnippet(false);
+    // Jalankan PATCH views — fetch snippet sudah dihandle di atas
     if (shouldTrackView) {
       fetch(`/api/snippets/${id}`, { method: "PATCH" })
         .then(r => r.json())
@@ -176,6 +182,10 @@ export default function SnippetClient({ id }: { id: string }) {
         .catch(() => {});
     }
 
+    // Set lastUpdatedAt dari initialData supaya polling deteksi perubahan dengan benar
+    if (initialData && !lastUpdatedAt.current) {
+      lastUpdatedAt.current = initialData.updatedAt;
+    }
     pollRef.current = setInterval(() => fetchSnippet(true), 3000);
     loadingTimerRef.current = setTimeout(() => setLoading(false), FETCH_TIMEOUT_MS + 1000);
     return () => {

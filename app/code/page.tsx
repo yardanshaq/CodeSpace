@@ -2,8 +2,20 @@ import { Metadata } from "next";
 import { redirect } from "next/navigation";
 import SnippetClient from "../snippet/[id]/SnippetClient";
 import { prisma } from "@/lib/prisma";
+import { getSession } from "@/lib/auth";
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://codespace.yardanshaq.xyz";
+
+const include = {
+  admin: { select: { username: true } },
+  attachments: {
+    include: {
+      globalFile: {
+        select: { id: true, name: true, mimeType: true, size: true },
+      },
+    },
+  },
+};
 
 export async function generateMetadata({
   searchParams,
@@ -14,7 +26,6 @@ export async function generateMetadata({
   if (!id) return { title: "CodeSpace", description: "a place to share simple snippets" };
 
   try {
-    // Query langsung ke DB — jauh lebih cepat dari HTTP fetch ke diri sendiri
     const snippet = await prisma.snippet.findFirst({
       where: { OR: [{ id }, { filename: id }] },
       select: {
@@ -50,12 +61,37 @@ export async function generateMetadata({
   }
 }
 
-export default function CodePage({
+export default async function CodePage({
   searchParams,
 }: {
   searchParams: { v?: string };
 }) {
   const id = searchParams.v;
   if (!id) redirect("/");
-  return <SnippetClient id={id} />;
+
+  // Fetch snippet dan session di server — data sudah siap saat halaman dirender
+  // Client tidak perlu fetch lagi, langsung render konten tanpa loading screen
+  const [snippet, session] = await Promise.all([
+    prisma.snippet.findFirst({
+      where: { OR: [{ id }, { filename: id }] },
+      include,
+    }),
+    getSession(),
+  ]);
+
+  // Private snippet: redirect ke home kalau tidak login
+  if (snippet && !snippet.isPublic && !session) {
+    redirect("/login");
+  }
+
+  // Cast ke any karena Prisma return nested type, sedangkan SnippetClient
+  // expect flat GlobalFile[] untuk attachments (sudah di-map di bawah)
+  const initialData = snippet
+    ? {
+        ...snippet,
+        attachments: snippet.attachments.map((a) => a.globalFile),
+      } as any
+    : null;
+
+  return <SnippetClient id={id} initialData={initialData} />;
 }
