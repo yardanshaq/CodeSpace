@@ -2,69 +2,56 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { Role } from "@prisma/client";
+import { redis } from "@/lib/redis";
 
 export const dynamic = "force-dynamic";
 
-// ─── Rate limiting per IP ────────────────────────────────────────────────────
-// Maksimal 3 akun per IP per jam
-const registerAttempts = new Map<string, { count: number; resetAt: number }>();
-const MAX_PER_HOUR = 3;
-const WINDOW_MS    = 24 * 60 * 60 * 1000; // 1 jam
+const MAX_PER_DAY = 3;
+const WINDOW_SEC  = 24 * 60 * 60;
 
-function checkRateLimit(ip: string): { allowed: boolean; retryAfterSec: number } {
-  const now  = Date.now();
-  const entry = registerAttempts.get(ip);
-
-  if (!entry || now > entry.resetAt) {
-    registerAttempts.set(ip, { count: 1, resetAt: now + WINDOW_MS });
-    return { allowed: true, retryAfterSec: 0 };
-  }
-  if (entry.count >= MAX_PER_HOUR) {
-    const retryAfterSec = Math.ceil((entry.resetAt - now) / 1000);
-    return { allowed: false, retryAfterSec };
-  }
-  entry.count++;
-  return { allowed: true, retryAfterSec: 0 };
+function getRealIp(req: NextRequest): string {
+  return (
+    req.headers.get("x-real-ip") ||
+    req.headers.get("x-vercel-forwarded-for")?.split(",")[0]?.trim() ||
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    "unknown"
+  );
 }
 
-// Bersihkan entry lama tiap 10 menit supaya tidak memory leak
-setInterval(() => {
-  const now = Date.now();
-  registerAttempts.forEach((entry, ip) => {
-    if (now > entry.resetAt) registerAttempts.delete(ip);
-  });
-}, 10 * 60 * 1000);
+async function checkRateLimit(ip: string): Promise<{ allowed: boolean; retryAfterSec: number }> {
+  const key = `ratelimit:register:${ip}`;
+  try {
+    const count = await redis.incr(key);
+    if (count === 1) await redis.expire(key, WINDOW_SEC);
+    if (count > MAX_PER_DAY) {
+      const ttl = await redis.ttl(key);
+      return { allowed: false, retryAfterSec: ttl > 0 ? ttl : WINDOW_SEC };
+    }
+    return { allowed: true, retryAfterSec: 0 };
+  } catch {
+    console.warn("Redis rate limit check failed — allowing request");
+    return { allowed: true, retryAfterSec: 0 };
+  }
+}
 
-// ─── Toggle registrasi via env var ──────────────────────────────────────────
-// Set REGISTRATION_OPEN=false di Vercel Environment Variables untuk tutup registrasi
-// tanpa perlu redeploy kode
 function isRegistrationOpen(): boolean {
   const val = process.env.REGISTRATION_OPEN;
-  if (!val) return true;             // default: terbuka
+  if (!val) return true;
   return val.toLowerCase() !== "false" && val !== "0";
 }
 
-// ─── Handler ─────────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   try {
-    // Cek apakah registrasi sedang dibuka
     if (!isRegistrationOpen()) {
-      return NextResponse.json(
-        { error: "Registration is currently closed." },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: "Registration is currently closed." }, { status: 403 });
     }
 
-    // Rate limit per IP
-    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
-    const { allowed, retryAfterSec } = checkRateLimit(ip);
+    const ip = getRealIp(req);
+    const { allowed, retryAfterSec } = await checkRateLimit(ip);
     if (!allowed) {
       return NextResponse.json(
         { error: `Too many registrations from this IP. Try again in ${Math.ceil(retryAfterSec / 60)} minute(s).` },
-        {
-          status: 429,
-          headers: { "Retry-After": String(retryAfterSec) },
-        }
+        { status: 429, headers: { "Retry-After": String(retryAfterSec) } }
       );
     }
 
@@ -74,7 +61,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Username and password required" }, { status: 400 });
     }
     if (username.length < 3 || username.length > 32) {
-      return NextResponse.json({ error: "Username must be 3–32 characters" }, { status: 400 });
+      return NextResponse.json({ error: "Username must be 3-32 characters" }, { status: 400 });
     }
     if (!/^[a-zA-Z0-9_]+$/.test(username)) {
       return NextResponse.json({ error: "Only letters, numbers, and underscores allowed" }, { status: 400 });
@@ -83,14 +70,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Password must be at least 6 characters" }, { status: 400 });
     }
 
-    // Cek batas total akun (opsional — cegah DB penuh)
     const MAX_TOTAL_ACCOUNTS = parseInt(process.env.MAX_ACCOUNTS || "500");
     const totalAccounts = await prisma.admin.count();
     if (totalAccounts >= MAX_TOTAL_ACCOUNTS) {
-      return NextResponse.json(
-        { error: "Registration is currently unavailable." },
-        { status: 503 }
-      );
+      return NextResponse.json({ error: "Registration is currently unavailable." }, { status: 503 });
     }
 
     const existing = await prisma.admin.findUnique({ where: { username } });

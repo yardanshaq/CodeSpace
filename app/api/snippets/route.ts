@@ -1,6 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { redis } from "@/lib/redis";
+
+
+// Rate limit post snippet — maksimal 10 snippet per IP per jam
+async function checkSnippetRateLimit(ip: string): Promise<{ allowed: boolean; retryAfter: number }> {
+  const key = `ratelimit:post-snippet:${ip}`;
+  try {
+    const count = await redis.incr(key);
+    if (count === 1) await redis.expire(key, 3600);
+    if (count > 10) {
+      const ttl = await redis.ttl(key);
+      return { allowed: false, retryAfter: ttl > 0 ? ttl : 3600 };
+    }
+    return { allowed: true, retryAfter: 0 };
+  } catch {
+    return { allowed: true, retryAfter: 0 };
+  }
+}
+
+function getRealIp(req: NextRequest): string {
+  return (
+    req.headers.get("x-real-ip") ||
+    req.headers.get("x-vercel-forwarded-for")?.split(",")[0]?.trim() ||
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    "unknown"
+  );
+}
 
 export const dynamic = "force-dynamic";
 
@@ -76,6 +103,16 @@ export async function POST(req: NextRequest) {
     const session = await getSession();
     if (!session) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Rate limit — cegah spam snippet
+    const ip = getRealIp(req);
+    const { allowed, retryAfter } = await checkSnippetRateLimit(ip);
+    if (!allowed) {
+      return NextResponse.json(
+        { error: `Too many snippets created. Try again in ${Math.ceil(retryAfter / 60)} minute(s).` },
+        { status: 429, headers: { "Retry-After": String(retryAfter) } }
+      );
     }
 
     const { title, code, category, isPublic } = await req.json();
