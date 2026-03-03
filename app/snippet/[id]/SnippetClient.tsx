@@ -134,25 +134,43 @@ export default function SnippetClient({ id }: { id: string }) {
   useEffect(() => {
     if (!id || hasTracked.current) return;
     hasTracked.current = true;
-    fetchSnippet(false);
+
+    // Tentukan apakah view perlu di-track SEBELUM fetch snippet
+    // sehingga GET dan PATCH bisa jalan PARALLEL
+    let shouldTrackView = false;
     try {
       const VISITOR_KEY = "cs_visitor_id";
-      const VIEWS_KEY = "cs_viewed";
+      const VIEWS_KEY   = "cs_viewed";
       let visitorId = localStorage.getItem(VISITOR_KEY);
       if (!visitorId) {
         visitorId = Math.random().toString(36).slice(2) + Date.now().toString(36);
         localStorage.setItem(VISITOR_KEY, visitorId);
       }
-      const viewed = new Set((localStorage.getItem(VIEWS_KEY) || "").split(",").filter(Boolean));
+      const viewed  = new Set((localStorage.getItem(VIEWS_KEY) || "").split(",").filter(Boolean));
       const viewKey = `${visitorId}:${id}`;
       if (!viewed.has(viewKey)) {
         viewed.add(viewKey);
         localStorage.setItem(VIEWS_KEY, Array.from(viewed).join(","));
-        fetch(`/api/snippets/${id}`, { method: "PATCH" });
+        shouldTrackView = true;
       }
     } catch {
-      fetch(`/api/snippets/${id}`, { method: "PATCH" });
+      shouldTrackView = true;
     }
+
+    // Jalankan GET snippet dan PATCH views secara PARALLEL — tidak saling nunggu
+    fetchSnippet(false);
+    if (shouldTrackView) {
+      fetch(`/api/snippets/${id}`, { method: "PATCH" })
+        .then(r => r.json())
+        .then(data => {
+          // Update views di UI langsung setelah server confirm
+          if (data.views !== undefined) {
+            setSnippet(prev => prev ? { ...prev, views: data.views } : prev);
+          }
+        })
+        .catch(() => {});
+    }
+
     pollRef.current = setInterval(() => fetchSnippet(true), 3000);
     loadingTimerRef.current = setTimeout(() => setLoading(false), FETCH_TIMEOUT_MS + 1000);
     return () => {

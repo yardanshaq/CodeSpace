@@ -1,30 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+
 export const dynamic = "force-dynamic";
 
-async function findSnippet(idOrFilename: string) {
-  return (
-    (await prisma.snippet.findUnique({ where: { id: idOrFilename } })) ??
-    (await prisma.snippet.findUnique({ where: { filename: idOrFilename } }))
-  );
-}
-
-async function findSnippetWithRelations(idOrFilename: string) {
-  const include = {
-    admin: { select: { username: true } },
-    attachments: {
-      include: {
-        globalFile: {
-          select: { id: true, name: true, mimeType: true, size: true },
-        },
+const include = {
+  admin: { select: { username: true } },
+  attachments: {
+    include: {
+      globalFile: {
+        select: { id: true, name: true, mimeType: true, size: true },
       },
     },
-  };
-  return (
-    (await prisma.snippet.findUnique({ where: { id: idOrFilename }, include })) ??
-    (await prisma.snippet.findUnique({ where: { filename: idOrFilename }, include }))
-  );
+  },
+};
+
+// Satu query pakai findFirst + OR — tidak lagi 2 sequential findUnique
+async function findSnippetWithRelations(idOrFilename: string) {
+  return prisma.snippet.findFirst({
+    where: { OR: [{ id: idOrFilename }, { filename: idOrFilename }] },
+    include,
+  });
+}
+
+async function findSnippet(idOrFilename: string) {
+  return prisma.snippet.findFirst({
+    where: { OR: [{ id: idOrFilename }, { filename: idOrFilename }] },
+  });
 }
 
 export async function GET(
@@ -32,18 +34,33 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const snippet = await findSnippetWithRelations(params.id);
+    // Jalankan snippet query dan session check secara PARALLEL — hemat 1 round trip DB
+    const [snippet, session] = await Promise.all([
+      findSnippetWithRelations(params.id),
+      getSession(),
+    ]);
+
     if (!snippet) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-    const session = await getSession();
     if (!snippet.isPublic && !session) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    return NextResponse.json({
+
+    const res = NextResponse.json({
       ...snippet,
       attachments: snippet.attachments.map((a) => a.globalFile),
     });
+
+    // Cache publik snippet di CDN/browser 10 detik — refresh otomatis tiap 30 detik
+    // Private snippet tidak di-cache sama sekali
+    if (snippet.isPublic) {
+      res.headers.set("Cache-Control", "public, max-age=10, stale-while-revalidate=30");
+    } else {
+      res.headers.set("Cache-Control", "private, no-cache");
+    }
+
+    return res;
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
@@ -55,14 +72,19 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   try {
-    const snippet = await findSnippet(params.id);
+    // Jalankan snippet query dan session check secara PARALLEL
+    const [snippet, session] = await Promise.all([
+      findSnippet(params.id),
+      getSession(),
+    ]);
+
     if (!snippet) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-    const session = await getSession();
     if (!snippet.isPublic && !session) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
     const updated = await prisma.snippet.update({
       where: { id: snippet.id },
       data: { views: { increment: 1 } },
@@ -80,23 +102,28 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await getSession();
+    const [snippet, session] = await Promise.all([
+      findSnippet(params.id),
+      getSession(),
+    ]);
+
     if (!session) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    const snippet = await findSnippet(params.id);
     if (!snippet) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
     if (session.role !== "SUPERADMIN" && snippet.adminId !== session.id) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+
     const { title, code, category, isPublic } = await req.json();
     const filename =
       (title || snippet.title)
         .toLowerCase()
         .replace(/\s+/g, "-")
         .replace(/[^a-z0-9-]/g, "") + ".js";
+
     const updated = await prisma.snippet.update({
       where: { id: snippet.id },
       data: {
@@ -132,17 +159,21 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await getSession();
+    const [snippet, session] = await Promise.all([
+      findSnippet(params.id),
+      getSession(),
+    ]);
+
     if (!session) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    const snippet = await findSnippet(params.id);
     if (!snippet) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
     if (session.role !== "SUPERADMIN" && snippet.adminId !== session.id) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+
     await prisma.snippet.delete({ where: { id: snippet.id } });
     return NextResponse.json({ success: true });
   } catch (error) {

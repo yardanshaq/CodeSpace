@@ -95,9 +95,6 @@ const _requireBase = (typeof __filename !== "undefined" ? __filename : null)
   ?? path.join(process.cwd(), "node_modules", "next", "dist", "server", "app-render", "work-unit-async-storage.external.js");
 const projectRequire = createRequire(_requireBase);
 
-function tryParseJson(str: string) {
-  try { return JSON.parse(str) } catch { return null }
-}
 
 // Kumpulkan nilai env sensitif sekali saat server start — bukan per-request
 // Dipakai untuk redact output snippet agar env vars tidak bocor ke client
@@ -115,174 +112,6 @@ const sanitizeOutput = (text: string): string => {
   }
   return result;
 };
-
-// Cache proxy domains dari DB — refresh setiap 60 detik
-// sehingga tidak perlu restart server saat tambah/hapus domain
-let _proxyDomainsCache: string[] = [];
-let _proxyCacheExpiry = 0;
-
-async function getProxyDomains(): Promise<string[]> {
-  if (Date.now() < _proxyCacheExpiry) return _proxyDomainsCache;
-  try {
-    const rows = await prisma.proxyDomain.findMany({ select: { domain: true } });
-    _proxyDomainsCache = rows.map((r: { domain: string }) => r.domain.toLowerCase());
-    _proxyCacheExpiry = Date.now() + 60_000;
-  } catch {
-    if (_proxyDomainsCache.length === 0) {
-      _proxyDomainsCache = (process.env.PROXY_DOMAINS || "")
-        .split(",").map(d => d.trim().toLowerCase()).filter(Boolean);
-    }
-  }
-  return _proxyDomainsCache;
-}
-
-// Refresh cache di background tanpa blocking request
-function refreshProxyDomainsBackground() {
-  if (Date.now() < _proxyCacheExpiry) return; // masih valid, skip
-  prisma.proxyDomain.findMany({ select: { domain: true } })
-    .then(rows => {
-      _proxyDomainsCache = rows.map((r: { domain: string }) => r.domain.toLowerCase());
-      _proxyCacheExpiry = Date.now() + 60_000;
-    })
-    .catch(() => {
-      if (_proxyDomainsCache.length === 0) {
-        _proxyDomainsCache = (process.env.PROXY_DOMAINS || "")
-          .split(",").map(d => d.trim().toLowerCase()).filter(Boolean);
-      }
-    });
-}
-
-function shouldProxySync(url: string, domains: string[]): boolean {
-  if (!url || domains.length === 0) return false;
-  try {
-    const hostname = new URL(url).hostname.toLowerCase();
-    return domains.some(d => hostname === d || hostname.endsWith("." + d));
-  } catch {
-    return false;
-  }
-}
-
-function createProxiedAxios(proxyDomains: string[] = []) {
-  const originalAxios = MODULE_MAP['axios'] as any
-  if (!originalAxios) return originalAxios
-
-  const PROXY_URL = process.env.PROXY_WORKER_URL
-  const PROXY_KEY = process.env.PROXY_WORKER_KEY
-  // Kalau tidak ada env proxy, kembalikan axios biasa
-  if (!PROXY_URL || !PROXY_KEY) return originalAxios
-
-  const proxyHostname = new URL(PROXY_URL).hostname
-  const proxied = originalAxios.create()
-
-  proxied.interceptors.request.use((config: any) => {
-    const targetUrl = config.url || ''
-    // Skip kalau URL adalah proxy itu sendiri
-    if (targetUrl.includes(proxyHostname)) return config
-    // Skip kalau domain tidak perlu diproxy dan tidak ada header force-proxy
-    if (!shouldProxySync(targetUrl, proxyDomains) && !config.headers?.['x-use-proxy']) return config
-
-    const method = (config.method || 'GET').toUpperCase()
-    const originalHeaders = { ...config.headers }
-    delete originalHeaders['Content-Type']
-    delete originalHeaders['content-type']
-    delete originalHeaders['x-use-proxy'] // hapus header internal sebelum dikirim
-
-    config._originalUrl = targetUrl
-    config._isProxied = true
-    config.url = PROXY_URL
-    config.method = 'POST'
-    config.headers = {
-      'Content-Type': 'application/json',
-      'x-proxy-key': PROXY_KEY
-    }
-    config.data = JSON.stringify({
-      url: targetUrl,
-      method,
-      headers: originalHeaders,
-      data: config.data || null
-    })
-
-    return config
-  })
-
-  proxied.interceptors.response.use((response: any) => {
-    if (!response.config._isProxied) return response
-
-    const w = response.data
-    response.status = w.status ?? response.status
-    response.headers['content-type'] = w.contentType || ''
-    response.data = tryParseJson(w.body) ?? w.body
-
-    return response
-  })
-
-  return proxied
-}
-
-function createProxyFetch(proxyDomains: string[] = []) {
-  const PROXY_URL = process.env.PROXY_WORKER_URL
-  const PROXY_KEY = process.env.PROXY_WORKER_KEY
-  const proxyHostname = PROXY_URL ? new URL(PROXY_URL).hostname : ""
-
-  return async function proxyFetch(input: any, init?: any): Promise<Response> {
-    const targetUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
-    const forceProxy = init?.headers?.['x-use-proxy'] || (init?.headers instanceof Headers && init.headers.get('x-use-proxy'))
-    const useProxy = PROXY_URL && PROXY_KEY && (shouldProxySync(targetUrl, proxyDomains) || forceProxy) && !targetUrl.includes(proxyHostname)
-
-    if (useProxy) {
-      const method = (init?.method || 'GET').toUpperCase()
-      const originalHeaders: Record<string, string> = {}
-      if (init?.headers) {
-        const h = new Headers(init.headers)
-        h.forEach((v: string, k: string) => { originalHeaders[k] = v })
-      }
-      let bodyData: string | null = null
-      if (init?.body) bodyData = typeof init.body === 'string' ? init.body : String(init.body)
-
-      const proxyRes = await globalThis.fetch(PROXY_URL!, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-proxy-key': PROXY_KEY! },
-        body: JSON.stringify({ url: targetUrl, method, headers: originalHeaders, data: bodyData }),
-      })
-      const w = await proxyRes.json() as any
-      return new Response(w.body ?? "", {
-        status : w.status ?? proxyRes.status,
-        headers: { 'content-type': w.contentType || 'text/plain' },
-      })
-    }
-
-    // Direct fetch — pipe native stream ke TransformStream baru agar
-    // res.body.getReader() bisa dipakai dari dalam VM sandbox.
-    // Native ReadableStream dari host context tidak bisa di-read lintas VM boundary,
-    // tapi TransformStream yang kita buat di sini bisa karena sama contextnya.
-    const nativeRes = await globalThis.fetch(input, init)
-    const { readable, writable } = new TransformStream()
-    const writer = writable.getWriter()
-    const nativeReader = nativeRes.body?.getReader()
-
-    if (!nativeReader) {
-      writer.close()
-    } else {
-      // Pipe di background — tidak blocking
-      ;(async () => {
-        try {
-          while (true) {
-            const { done, value } = await nativeReader.read()
-            if (done) { writer.close(); break }
-            await writer.write(new Uint8Array(value))
-          }
-        } catch (e) {
-          writer.abort(e)
-        }
-      })()
-    }
-
-    return new Response(readable, {
-      status : nativeRes.status,
-      headers: nativeRes.headers,
-    })
-  }
-}
 
 // Modul yang SELALU diblokir, bahkan kalau ada di MODULE_MAP
 const BLOCKED_MODULES = new Set([
@@ -534,11 +363,7 @@ export async function POST(req: NextRequest) {
 
           const startTime = Date.now();
           const NativePromise = Promise;
-          // Pakai cache langsung (tidak blocking) — refresh DB di background
-          refreshProxyDomainsBackground();
-          const proxyDomains = _proxyDomainsCache;
-          const proxiedAxios = createProxiedAxios(proxyDomains);
-          const proxiedFetch = createProxyFetch(proxyDomains);
+
           const { sandboxFs, sandboxFsp } = createSandboxedFs(tempDir);
 
           const sandboxRequire = (moduleName: string) => {
@@ -546,7 +371,7 @@ export async function POST(req: NextRequest) {
             if (moduleName === "fs") return sandboxFs;
             if (moduleName === "fs/promises") return sandboxFsp;
             if (moduleName === "fs-extra") return sandboxFs;
-            if (moduleName === "axios") return proxiedAxios;
+            if (moduleName === "axios") return realRequire("axios");
             return realRequire(moduleName);
           };
 
@@ -574,7 +399,33 @@ export async function POST(req: NextRequest) {
             AbortController, AbortSignal, Promise,
             setTimeout, clearTimeout, setInterval, clearInterval,
             setImmediate, clearImmediate, queueMicrotask,
-            fetch: proxiedFetch,
+            fetch: async (input: any, init?: any): Promise<Response> => {
+              // Native ReadableStream dari host context tidak bisa di-iterate
+              // dari dalam VM sandbox (cross-context boundary).
+              // Solusi: pipe lewat TransformStream baru yang dibuat di context yang sama
+              // dengan sandbox, sehingga res.body bisa dipakai normal (for await, getReader, dll)
+              const nativeRes = await globalThis.fetch(input, init);
+              const { readable, writable } = new TransformStream();
+              const writer = writable.getWriter();
+              const nativeReader = nativeRes.body?.getReader();
+              if (!nativeReader) {
+                writer.close();
+              } else {
+                (async () => {
+                  try {
+                    while (true) {
+                      const { done, value } = await nativeReader.read();
+                      if (done) { writer.close(); break; }
+                      await writer.write(new Uint8Array(value));
+                    }
+                  } catch (e) { writer.abort(e); }
+                })();
+              }
+              return new Response(readable, {
+                status : nativeRes.status,
+                headers: nativeRes.headers,
+              });
+            },
             JSON, Math, Date, Error, TypeError, RangeError,
             SyntaxError, ReferenceError, EvalError, URIError,
             parseInt, parseFloat, isNaN, isFinite,
