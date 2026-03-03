@@ -111,14 +111,19 @@ export default function SnippetClient({ id }: { id: string }) {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
       try {
-        const r = await fetch(`/api/snippets/${id}`, { signal: controller.signal });
+        // cache: "no-store" supaya polling selalu dapat data terbaru, tidak kena browser cache
+        const r = await fetch(`/api/snippets/${id}`, { signal: controller.signal, cache: "no-store" });
         clearTimeout(timeoutId);
         if (!r.ok) { if (!silent) setLoading(false); return; }
         const data: Snippet = await r.json();
-        if (silent && lastUpdatedAt.current && data.updatedAt !== lastUpdatedAt.current) {
-          setSnippet(data);
-          lastUpdatedAt.current = data.updatedAt;
-        } else if (!silent) {
+        if (silent) {
+          // Update jika ada perubahan (bandingkan updatedAt)
+          // lastUpdatedAt bisa null saat pertama kali — tetap update
+          if (!lastUpdatedAt.current || data.updatedAt !== lastUpdatedAt.current) {
+            setSnippet(data);
+            lastUpdatedAt.current = data.updatedAt;
+          }
+        } else {
           setSnippet(data);
           lastUpdatedAt.current = data.updatedAt;
           setLoading(false);
