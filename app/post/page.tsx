@@ -62,6 +62,8 @@ export default function PostPage() {
   const [regSuccess, setRegSuccess] = useState("");
   const [regLoading, setRegLoading] = useState(false);
 
+  const outputRef = useRef<HTMLDivElement | null>(null);
+
   useEffect(() => {
     fetch("/api/auth/me")
       .then((r) => r.json())
@@ -91,7 +93,6 @@ export default function PostPage() {
         setSnippets(data);
         setSnippetsLoading(false);
       } else {
-        // Smart update: hanya replace snippet yang berubah, tanpa full re-render flicker
         setSnippets(prev => {
           const prevMap = new Map(prev.map(s => [s.id, s]));
           const hasChanges =
@@ -114,7 +115,6 @@ export default function PostPage() {
   useEffect(() => {
     if (user) {
       fetchSnippets(false);
-      // Poll setiap 3 detik — update views + snippet baru dari user lain
       pollRef.current = setInterval(() => fetchSnippets(true), 3000);
     }
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
@@ -131,6 +131,13 @@ export default function PostPage() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [showCreateModal, showEditModal, form, editSnippet]);
+
+  // Auto-scroll output ke bawah setiap kali ada output baru
+  useEffect(() => {
+    if (outputRef.current) {
+      outputRef.current.scrollTop = outputRef.current.scrollHeight;
+    }
+  }, [runOutput]);
 
   const isMember = user?.role === "MEMBER";
   const isSuperAdmin = user?.role === "SUPERADMIN";
@@ -448,7 +455,11 @@ export default function PostPage() {
               <button onClick={() => setShowRunModal(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18 }}>✕</button>
             </div>
             <div className="modal-body">
-              <div className="run-output" style={{ color: runHasError ? "#ff6b6b" : "#4ade80", position: "relative" }}>
+              <div
+                ref={outputRef}
+                className="run-output"
+                style={{ color: runHasError ? "#ff6b6b" : "#4ade80", position: "relative", overflowY: "auto" }}
+              >
                 {runOutput || (running ? "" : "// No output")}
                 {running && (
                   <span style={{ display: "inline-block", width: 8, height: 14, background: "#4ade80", marginLeft: 2, verticalAlign: "text-bottom", animation: "blink 1s step-end infinite" }} />

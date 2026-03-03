@@ -88,7 +88,6 @@ const FETCH_TIMEOUT_MS = 10_000;
 export default function SnippetClient({ id, initialData }: { id: string; initialData?: Snippet | null }) {
   const router = useRouter();
 
-  // initialData dari server — kalau ada, langsung render tanpa loading screen
   const [snippet, setSnippet] = useState<Snippet | null>(initialData ?? null);
   const [loading, setLoading] = useState(!initialData);
   const [copied, setCopied] = useState(false);
@@ -105,6 +104,14 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hasTracked = useRef(false);
   const loadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const outputRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll terminal ke bawah saat output baru masuk
+  useEffect(() => {
+    if (outputRef.current) {
+      outputRef.current.scrollTop = outputRef.current.scrollHeight;
+    }
+  }, [runOutput]);
 
   const fetchSnippet = useCallback(
     async (silent = false) => {
@@ -112,18 +119,15 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
       try {
-        // cache: "no-store" supaya polling selalu dapat data terbaru, tidak kena browser cache
         const r = await fetch(`/api/snippets/${id}`, { signal: controller.signal, cache: "no-store" });
         clearTimeout(timeoutId);
         if (!r.ok) { if (!silent) setLoading(false); return; }
         const data: Snippet = await r.json();
         if (silent) {
           if (!lastUpdatedAt.current || data.updatedAt !== lastUpdatedAt.current) {
-            // Ada perubahan konten snippet — update semua
             setSnippet(data);
             lastUpdatedAt.current = data.updatedAt;
           } else {
-            // Konten tidak berubah tapi views bisa bertambah — update views saja
             setSnippet(prev => prev ? { ...prev, views: data.views } : prev);
           }
         } else {
@@ -143,12 +147,8 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
     if (!id || hasTracked.current) return;
     hasTracked.current = true;
 
-    // Kalau sudah ada initialData dari server, skip fetch pertama
-    // Hanya track view dan mulai polling untuk update
     if (!initialData) fetchSnippet(false);
 
-    // Tentukan apakah view perlu di-track SEBELUM fetch snippet
-    // sehingga GET dan PATCH bisa jalan PARALLEL
     let shouldTrackView = false;
     try {
       const VISITOR_KEY = "cs_visitor_id";
@@ -162,6 +162,7 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
       const viewKey = `${visitorId}:${id}`;
       if (!viewed.has(viewKey)) {
         viewed.add(viewKey);
+        // Fix: Array.from() instead of spread to avoid --downlevelIteration error
         localStorage.setItem(VIEWS_KEY, Array.from(viewed).join(","));
         shouldTrackView = true;
       }
@@ -169,12 +170,10 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
       shouldTrackView = true;
     }
 
-    // Jalankan PATCH views — fetch snippet sudah dihandle di atas
     if (shouldTrackView) {
       fetch(`/api/snippets/${id}`, { method: "PATCH" })
         .then(r => r.json())
         .then(data => {
-          // Update views di UI langsung setelah server confirm
           if (data.views !== undefined) {
             setSnippet(prev => prev ? { ...prev, views: data.views } : prev);
           }
@@ -182,7 +181,6 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
         .catch(() => {});
     }
 
-    // Set lastUpdatedAt dari initialData supaya polling deteksi perubahan dengan benar
     if (initialData && !lastUpdatedAt.current) {
       lastUpdatedAt.current = initialData.updatedAt;
     }
@@ -437,7 +435,11 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
               <button onClick={() => setShowRunModal(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: "var(--text)" }}>✕</button>
             </div>
             <div className="modal-body">
-              <div className="run-output" style={{ color: runHasError ? "#ff6b6b" : "#4ade80", position: "relative" }}>
+              <div
+                ref={outputRef}
+                className="run-output"
+                style={{ color: runHasError ? "#ff6b6b" : "#4ade80", position: "relative", overflowY: "auto", maxHeight: "55vh" }}
+              >
                 {runOutput || (running ? "" : "// No output")}
                 {running && (
                   <span style={{ display: "inline-block", width: 8, height: 14, background: "#4ade80", marginLeft: 2, verticalAlign: "text-bottom", animation: "blink 1s step-end infinite" }} />
