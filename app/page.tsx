@@ -29,6 +29,7 @@ export default function HomePage() {
   const [selectedAuthors, setSelectedAuthors] = useState<string[]>([]);
   const [authors, setAuthors] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const isFirstLoad = useRef(true);
   const [showFilter, setShowFilter] = useState(false);
   const [user, setUser] = useState<NavUser | null>(null);
   const [userChecked, setUserChecked] = useState(false);
@@ -61,56 +62,35 @@ export default function HomePage() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const fetchSnippets = useCallback(async (silent = false) => {
-    if (!silent) setLoading(true);
+  const fetchSnippets = useCallback(async () => {
+    // Hanya tampil loading screen saat pertama kali, bukan saat search/filter berubah
+    if (isFirstLoad.current) setLoading(true);
     try {
       const params = new URLSearchParams();
       if (search) params.set("search", search);
-      const res = await fetch(`/api/snippets?${params.toString()}&_=${Date.now()}`);
+      const res = await fetch(`/api/snippets?${params.toString()}`);
       const data = await res.json();
       const list = Array.isArray(data) ? data : [];
+
       const unique = Array.from(new Set(list.map((s: Snippet) => s.admin.username))) as string[];
+      setAuthors(unique);
+
       const filtered = selectedAuthors.length > 0
         ? list.filter((s: Snippet) => selectedAuthors.includes(s.admin.username))
         : list;
 
-      if (!silent) {
-        setAuthors(unique);
-        setSnippets(filtered);
+      setSnippets(filtered);
+
+      if (isFirstLoad.current) {
         setLoading(false);
-      } else {
-        setAuthors(unique);
-        setSnippets(prev => {
-          const prevMap = new Map(prev.map(s => [s.id, s]));
-          const hasChanges =
-            prev.length !== filtered.length ||
-            filtered.some((s: Snippet) => {
-              const old = prevMap.get(s.id);
-              return !old || old.views !== s.views || old.title !== s.title;
-            });
-          if (!hasChanges) return prev;
-          return filtered.map((s: Snippet) => {
-            const existing = prevMap.get(s.id);
-            if (existing && existing.views === s.views && existing.title === s.title) return existing;
-            return s;
-          });
-        });
+        isFirstLoad.current = false;
       }
     } catch { /* silent fail */ }
   }, [search, selectedAuthors]);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      fetchSnippets(false);
-      if (pollRef.current) clearInterval(pollRef.current);
-      pollRef.current = setInterval(() => fetchSnippets(true), 3000);
-    }, 300);
-    return () => {
-      clearTimeout(timer);
-      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-    };
+    const timer = setTimeout(fetchSnippets, 300);
+    return () => clearTimeout(timer);
   }, [fetchSnippets]);
 
   const toggleAuthor = (a: string) => {
@@ -437,11 +417,11 @@ export default function HomePage() {
         }}>
           <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-faint)" }}>
             © {new Date().getFullYear()} CodeSpace · Built by{" "}
-            <a href="https://github.com/yardanshaq" target="_blank" rel="noopener noreferrer"
+            <a href="https://www.yardanshaq.xyz" target="_blank" rel="noopener noreferrer"
               style={{ color: "var(--text-muted)", textDecoration: "none" }}
               onMouseOver={(e) => (e.currentTarget.style.color = "var(--teal)")}
               onMouseOut={(e) => (e.currentTarget.style.color = "var(--text-muted)")}>
-              shaq
+              Shaq
             </a>
           </span>
           <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-faint)", display: "flex", alignItems: "center", gap: 6 }}>

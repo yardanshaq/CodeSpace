@@ -154,7 +154,7 @@ export default function PostPage() {
     if (res.ok) {
       setFormSuccess("Snippet created!");
       setForm({ title: "", code: "", category: "Scrape", isPublic: true });
-      setTimeout(() => { setShowCreateModal(false); setFormSuccess(""); fetchSnippets(false); }, 800);
+      setTimeout(() => { setShowCreateModal(false); setFormSuccess(""); fetchSnippets(true); }, 800);
     } else {
       setFormError(data.error || "Failed to create");
     }
@@ -172,7 +172,7 @@ export default function PostPage() {
     const data = await res.json();
     if (res.ok) {
       setFormSuccess("Snippet updated!");
-      setTimeout(() => { setShowEditModal(false); setFormSuccess(""); setEditSnippet(null); fetchSnippets(false); }, 800);
+      setTimeout(() => { setShowEditModal(false); setFormSuccess(""); setEditSnippet(null); fetchSnippets(true); }, 800);
     } else {
       setFormError(data.error || "Failed to update");
     }
@@ -182,7 +182,7 @@ export default function PostPage() {
   const handleDeleteSnippet = async (id: string) => {
     if (!confirm("Delete this snippet?")) return;
     const res = await fetch(`/api/snippets/${id}`, { method: "DELETE" });
-    if (res.ok) fetchSnippets(false);
+    if (res.ok) fetchSnippets(true);
   };
 
   const openEdit = (s: Snippet) => {
