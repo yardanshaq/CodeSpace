@@ -26,7 +26,7 @@ interface Snippet {
   updatedAt: string;
 }
 
-const CATEGORIES = ["AI", "Anime", "Converter", "Downloader", "Generator", "Other", "Scrape", "Search", "Tools", "Translate", "Uploader"];
+const CATEGORIES = ["AI", "Anime", "Converter", "Downloader", "Generator", "Other", "Random", "Scrape", "Search", "Tools", "Translate", "Uploader"];
 
 export default function PostPage() {
   const router = useRouter();
