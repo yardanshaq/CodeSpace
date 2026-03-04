@@ -29,15 +29,13 @@ const RUN_ROUTE_EXTERNALS = [
 
 const isDev = process.env.NODE_ENV !== "production";
 
-// CSP dibedakan dev vs production:
-// - Dev  : tambah 'unsafe-eval' (Next.js HMR source maps) + ws:/wss: (webpack HMR websocket)
-// - Prod : ketat, tanpa eval, connect hanya HTTPS
 const buildCsp = () => {
+  // Dev mode butuh 'unsafe-eval' untuk Next.js HMR source maps
   const scriptSrc = isDev
     ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
     : "script-src 'self' 'unsafe-inline'";
 
-  // Dev butuh ws://localhost untuk webpack HMR
+  // Dev butuh ws:// untuk webpack HMR websocket
   const connectSrc = isDev
     ? "connect-src 'self' ws: wss:"
     : "connect-src 'self'";
@@ -45,13 +43,12 @@ const buildCsp = () => {
   return [
     "default-src 'self'",
     scriptSrc,
-    "style-src 'self' 'unsafe-inline'",
-    // cdn.nekohime.site untuk favicon & asset gambar
+    // Google Fonts CSS + font files (dipakai di globals.css)
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' data: https://fonts.gstatic.com",
+    // Favicon & OG image dari CDN
     "img-src 'self' data: https://cdn.nekohime.site",
     connectSrc,
-    "font-src 'self' data:",
-    // Izinkan load favicon/icon dari CDN eksternal via <link>
-    "prefetch-src 'self' https://cdn.nekohime.site",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
@@ -75,12 +72,12 @@ const nextConfig = {
       {
         source: "/(.*)",
         headers: [
-          { key: "Content-Security-Policy",   value: csp },
-          { key: "X-Frame-Options",            value: "DENY" },
-          { key: "X-Content-Type-Options",     value: "nosniff" },
-          { key: "Referrer-Policy",            value: "strict-origin-when-cross-origin" },
-          { key: "Permissions-Policy",         value: "camera=(), microphone=(), geolocation=()" },
-          { key: "Strict-Transport-Security",  value: "max-age=2592000; includeSubDomains" },
+          { key: "Content-Security-Policy",  value: csp },
+          { key: "X-Frame-Options",          value: "DENY" },
+          { key: "X-Content-Type-Options",   value: "nosniff" },
+          { key: "Referrer-Policy",          value: "strict-origin-when-cross-origin" },
+          { key: "Permissions-Policy",       value: "camera=(), microphone=(), geolocation=()" },
+          { key: "Strict-Transport-Security", value: "max-age=2592000; includeSubDomains" },
         ],
       },
     ];

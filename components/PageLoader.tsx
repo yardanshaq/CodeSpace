@@ -90,7 +90,7 @@ export default function PageLoader({ timeoutMs = 15000, label }: PageLoaderProps
           </button>
         </div>
       )}
-      <style>{`
+      <style suppressHydrationWarning>{`
         @keyframes cs-loader-bounce {
           0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
           40%            { transform: translateY(-10px); opacity: 1; }
