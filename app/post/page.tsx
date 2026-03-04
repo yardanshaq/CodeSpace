@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import PageLoader from "@/components/PageLoader";
 import { getCachedUser, setCachedUser } from "@/lib/authCache";
@@ -132,6 +131,15 @@ export default function PostPage() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [showCreateModal, showEditModal, form, editSnippet]);
+
+  useEffect(() => {
+    if (showRunModal) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => { document.body.style.overflow = ""; };
+  }, [showRunModal]);
 
   // Smart scroll: hanya scroll kalau output datang sedikit-sedikit (streaming lambat)
   // Output instant/besar sekaligus tidak di-scroll supaya user bisa baca dari atas
@@ -372,7 +380,7 @@ export default function PostPage() {
                 <div className="admin-snippet-actions">
                   <button className="btn btn-yellow" onClick={() => handleRun(s)}>▶ RUN</button>
                   <button className="btn btn-teal" onClick={() => openEdit(s)}>✎ EDIT</button>
-                  <Link href={`/code?v=${s.filename}`} className="btn btn-white" style={{ textDecoration: "none" }}>VIEW</Link>
+                  <button className="btn btn-white" onClick={() => router.push(`/code?v=${s.filename}`)}>VIEW</button>
                   <button className="btn btn-red" onClick={() => handleDeleteSnippet(s.id)}>DELETE</button>
                 </div>
               </div>
@@ -471,11 +479,10 @@ export default function PostPage() {
 
       {/* RUN MODAL */}
       {showRunModal && runSnippet && (
-        <div className="modal-overlay" onClick={() => setShowRunModal(false)}>
+        <div className="modal-overlay">
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 660 }}>
             <div className="modal-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span className="modal-title">▶ RUN — {runSnippet.filename}</span>
-              <button onClick={() => setShowRunModal(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18 }}>✕</button>
+              <span className="modal-title">▶ RUN OUTPUT — {runSnippet.filename}</span>
             </div>
             <div className="modal-body">
               <div
