@@ -497,7 +497,7 @@ ${processedCode}
 })();
 `;
 
-          const TIMEOUT_MS = 55000;
+          const TIMEOUT_MS = 120000;
           const deadline = Date.now() + TIMEOUT_MS;
 
           try {
@@ -508,7 +508,7 @@ ${processedCode}
               await NativePromise.race([
                 result as Promise<unknown>,
                 new NativePromise<void>((_, reject) =>
-                  setTimeout(() => reject(new Error("Execution timed out after 55 seconds")), deadline - Date.now())
+                  setTimeout(() => reject(new Error("Execution timed out after 120 seconds")), deadline - Date.now())
                 ),
               ]);
             }
