@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
-import PageLoader from "@/components/PageLoader";
 
 interface GlobalFile {
   id: string;
@@ -114,14 +113,15 @@ function fileEmoji(mimeType: string): string {
   return "📦";
 }
 
-const FETCH_TIMEOUT_MS = 10_000;
+const FETCH_TIMEOUT_MS = 5_000;
 
 export default function SnippetClient({ id, initialData }: { id: string; initialData?: Snippet | null }) {
   const router = useRouter();
 
   // initialData dari server — kalau ada, langsung render tanpa loading screen
   const [snippet, setSnippet] = useState<Snippet | null>(initialData ?? null);
-  const [loading, setLoading] = useState(!initialData);
+  const [loading, setLoading] = useState(false);
+  const [notFound, setNotFound] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const [showRunModal, setShowRunModal] = useState(false);
@@ -184,7 +184,7 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
         // cache: "no-store" supaya polling selalu dapat data terbaru, tidak kena browser cache
         const r = await fetch(`/api/snippets/${id}`, { signal: controller.signal, cache: "no-store" });
         clearTimeout(timeoutId);
-        if (!r.ok) { if (!silent) setLoading(false); return; }
+        if (!r.ok) { if (!silent) setNotFound(true); return; }
         const data: Snippet = await r.json();
         if (silent) {
           if (!lastUpdatedAt.current || data.updatedAt !== lastUpdatedAt.current) {
@@ -198,11 +198,10 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
         } else {
           setSnippet(data);
           lastUpdatedAt.current = data.updatedAt;
-          setLoading(false);
         }
       } catch {
         clearTimeout(timeoutId);
-        if (!silent) setLoading(false);
+        if (!silent) setNotFound(true);
       }
     },
     [id]
@@ -212,8 +211,8 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
     if (!id || hasTracked.current) return;
     hasTracked.current = true;
 
-    // Kalau sudah ada initialData dari server, skip fetch pertama
-    // Hanya track view dan mulai polling untuk update
+    // Kalau tidak ada initialData, fetch di background tanpa loading screen
+    // Snippet akan muncul begitu data datang
     if (!initialData) fetchSnippet(false);
 
     // Tentukan apakah view perlu di-track SEBELUM fetch snippet
@@ -256,7 +255,7 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
       lastUpdatedAt.current = initialData.updatedAt;
     }
     pollRef.current = setInterval(() => fetchSnippet(true), 3000);
-    loadingTimerRef.current = setTimeout(() => setLoading(false), FETCH_TIMEOUT_MS + 1000);
+    loadingTimerRef.current = setTimeout(() => { if (!snippet) setNotFound(true); }, FETCH_TIMEOUT_MS + 1000);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
       if (loadingTimerRef.current) clearTimeout(loadingTimerRef.current);
@@ -354,8 +353,17 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
   const formatDate = (d: string) =>
     new Date(d).toLocaleDateString("id-ID", { day: "2-digit", month: "2-digit", year: "numeric" });
 
-  if (loading) return <PageLoader />;
-  if (!snippet) return (<><Navbar /><main className="main"><div className="loading">SNIPPET NOT FOUND.</div></main></>);
+  if (notFound) return (<><Navbar /><main className="main"><div className="loading">SNIPPET NOT FOUND.</div></main></>);
+  if (!snippet) return (
+    <>
+      <Navbar />
+      <main className="main">
+        <div style={{ opacity: 0.5, fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--text-muted)", textAlign: "center", marginTop: 80 }}>
+          Loading...
+        </div>
+      </main>
+    </>
+  );
 
   const highlightedLines = highlight(snippet.code).split("\n");
 
