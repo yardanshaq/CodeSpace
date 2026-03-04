@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import SnippetClient from "../snippet/[id]/SnippetClient";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { cache } from "react";
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://codespace.yardansh.com";
 
@@ -17,6 +18,15 @@ const include = {
   },
 };
 
+// react `cache` deduplikasi query yang sama dalam satu request —
+// generateMetadata dan CodePage keduanya panggil ini tapi DB hanya diquery SEKALI.
+const getSnippet = cache(async (id: string) => {
+  return prisma.snippet.findFirst({
+    where: { OR: [{ id }, { filename: id }] },
+    include,
+  });
+});
+
 export async function generateMetadata({
   searchParams,
 }: {
@@ -26,18 +36,8 @@ export async function generateMetadata({
   if (!id) return { title: "CodeSpace", description: "a place to share simple snippets" };
 
   try {
-    const snippet = await prisma.snippet.findFirst({
-      where: { OR: [{ id }, { filename: id }] },
-      select: {
-        title:    true,
-        category: true,
-        filename: true,
-        isPublic: true,
-        admin:    { select: { username: true } },
-      },
-    });
+    const snippet = await getSnippet(id);
 
-    // Jangan bocorkan info snippet private di OG metadata
     if (!snippet || !snippet.isPublic) return { title: "CodeSpace", description: "a place to share simple snippets" };
 
     const desc = `${snippet.category} snippet by ${snippet.admin.username} — ${snippet.filename}`;
@@ -71,16 +71,12 @@ export default async function CodePage({
   const id = searchParams.v;
   if (!id) redirect("/");
 
+  // Jalankan snippet fetch dan session check secara parallel
   const [snippet, session] = await Promise.all([
-    prisma.snippet.findFirst({
-      where: { OR: [{ id }, { filename: id }] },
-      include,
-    }),
+    getSnippet(id),   // pakai cache — tidak query ulang kalau generateMetadata sudah duluan
     getSession(),
   ]);
 
-  // Private snippet: hanya owner atau SUPERADMIN yang boleh lihat
-  // Selain itu → tampilkan "SNIPPET NOT FOUND", bukan redirect ke login
   let initialData = null;
   if (snippet) {
     if (snippet.isPublic) {
