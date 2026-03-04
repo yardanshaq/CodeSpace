@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import Navbar from "@/components/Navbar";
 
 interface Snippet {
@@ -198,9 +199,9 @@ export default function HomeClient({
             {snippets.map((snippet) => (
               <div key={snippet.id} className="snippet-card">
                 <div className="snippet-card-header">
-                  <span className="snippet-card-title" onClick={() => router.push(`/code?v=${snippet.filename}`)}>
+                  <Link href={`/code?v=${snippet.filename}`} className="snippet-card-title" style={{ textDecoration: "none", color: "inherit" }}>
                     {snippet.title}
-                  </span>
+                  </Link>
                   <span className="snippet-views">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
@@ -217,7 +218,7 @@ export default function HomeClient({
                     </svg>
                     {snippet.admin.username}
                   </span>
-                  <button className="btn btn-black" onClick={() => router.push(`/code?v=${snippet.filename}`)}>View</button>
+                  <Link href={`/code?v=${snippet.filename}`} className="btn btn-black" style={{ textDecoration: "none" }}>View</Link>
                 </div>
               </div>
             ))}

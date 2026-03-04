@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import PageLoader from "@/components/PageLoader";
 
@@ -378,7 +379,7 @@ export default function PostClient({
                 <div className="admin-snippet-actions">
                   <button className="btn btn-yellow" onClick={() => handleRun(s)}>▶ RUN</button>
                   <button className="btn btn-teal" onClick={() => openEdit(s)}>✎ EDIT</button>
-                  <button className="btn btn-white" onClick={() => router.push(`/code?v=${s.filename}`)}>VIEW</button>
+                  <Link href={`/code?v=${s.filename}`} className="btn btn-white" style={{ textDecoration: "none" }}>VIEW</Link>
                   <button className="btn btn-red" onClick={() => handleDeleteSnippet(s.id)}>DELETE</button>
                 </div>
               </div>
