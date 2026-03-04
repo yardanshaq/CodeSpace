@@ -143,6 +143,15 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
   const prevOutputLen = useRef(0);
 
   useEffect(() => {
+    if (showRunModal) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => { document.body.style.overflow = ""; };
+  }, [showRunModal]);
+
+  useEffect(() => {
     const el = outputRef.current;
     if (!el) return;
     userScrolledUp.current = false;
@@ -490,11 +499,10 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
       </main>
 
       {showRunModal && (
-        <div className="modal-overlay" onClick={() => setShowRunModal(false)}>
+        <div className="modal-overlay">
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 660 }}>
             <div className="modal-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span className="modal-title">▶ RUN OUTPUT — {snippet.filename}</span>
-              <button onClick={() => setShowRunModal(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: "var(--text)" }}>✕</button>
             </div>
             <div className="modal-body">
               <div ref={outputRef} className="run-output" style={{ color: runHasError ? "#ff6b6b" : "#4ade80", position: "relative", overflowY: "auto", maxHeight: "55vh" }}>
