@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import SnippetClient from "./[id]/SnippetClient";
 import { prisma } from "@/lib/prisma";
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://codespace.yardanshaq.xyz";
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://codespace.yardansh.com";
 
 export async function generateMetadata({
   searchParams,

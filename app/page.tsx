@@ -417,7 +417,7 @@ export default function HomePage() {
         }}>
           <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-faint)" }}>
             © {new Date().getFullYear()} CodeSpace · Built by{" "}
-            <a href="https://www.yardanshaq.xyz" target="_blank" rel="noopener noreferrer"
+            <a href="https://www.yardansh.com" target="_blank" rel="noopener noreferrer"
               style={{ color: "var(--text-muted)", textDecoration: "none" }}
               onMouseOver={(e) => (e.currentTarget.style.color = "var(--teal)")}
               onMouseOut={(e) => (e.currentTarget.style.color = "var(--text-muted)")}>

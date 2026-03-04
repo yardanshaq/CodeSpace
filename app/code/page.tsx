@@ -4,7 +4,7 @@ import SnippetClient from "../snippet/[id]/SnippetClient";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://codespace.yardanshaq.xyz";
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://codespace.yardansh.com";
 
 const include = {
   admin: { select: { username: true } },

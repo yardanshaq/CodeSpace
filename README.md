@@ -13,7 +13,7 @@
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Neon-336791?style=for-the-badge&logo=postgresql&logoColor=white)
 ![Deployed on Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-000000?style=for-the-badge&logo=vercel)
 
-[Live Demo](https://codespace.yardanshaq.xyz) · [Admin Panel](https://codespace.yardanshaq.xyz/post) · [Report Bug](https://github.com/shaqpi/CodeSpace/issues)
+[Live Demo](https://codespace.yardansh.com) · [Admin Panel](https://codespace.yardansh.com/post) · [Report Bug](https://github.com/shaqpi/CodeSpace/issues)
 
 </div>
 
