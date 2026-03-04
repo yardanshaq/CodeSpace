@@ -6,7 +6,7 @@ import fs from "fs";
 import { createRequire } from "module";
 import { prisma } from "@/lib/prisma";
 
-export const maxDuration = 60;
+export const maxDuration = 200;
 export const dynamic = "force-dynamic";
 
 // Daftar semua module yang tersedia untuk dipakai di dalam snippet.
@@ -497,7 +497,7 @@ ${processedCode}
 })();
 `;
 
-          const TIMEOUT_MS = 55000;
+          const TIMEOUT_MS = 200000;
           const deadline = Date.now() + TIMEOUT_MS;
 
           try {
@@ -508,7 +508,7 @@ ${processedCode}
               await NativePromise.race([
                 result as Promise<unknown>,
                 new NativePromise<void>((_, reject) =>
-                  setTimeout(() => reject(new Error("Execution timed out after 55 seconds")), deadline - Date.now())
+                  setTimeout(() => reject(new Error("Execution timed out after 200 seconds")), deadline - Date.now())
                 ),
               ]);
             }
