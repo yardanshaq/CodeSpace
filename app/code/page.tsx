@@ -4,6 +4,8 @@ import SnippetClient from "../snippet/[id]/SnippetClient";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://codespace.yardansh.com";
 
 const include = {
@@ -26,19 +28,13 @@ export async function generateMetadata({
   if (!id) return { title: "CodeSpace", description: "a place to share simple snippets" };
 
   try {
+    // Query ringan — hanya field yang dibutuhkan untuk metadata, tidak block render utama
     const snippet = await prisma.snippet.findFirst({
-      where: { OR: [{ id }, { filename: id }] },
-      select: {
-        title:    true,
-        category: true,
-        filename: true,
-        isPublic: true,
-        admin:    { select: { username: true } },
-      },
+      where: { OR: [{ id }, { filename: id }], isPublic: true },
+      select: { title: true, category: true, filename: true, admin: { select: { username: true } } },
     });
 
-    // Jangan bocorkan info snippet private di OG metadata
-    if (!snippet || !snippet.isPublic) return { title: "CodeSpace", description: "a place to share simple snippets" };
+    if (!snippet) return { title: "CodeSpace", description: "a place to share simple snippets" };
 
     const desc = `${snippet.category} snippet by ${snippet.admin.username} — ${snippet.filename}`;
 
@@ -79,8 +75,6 @@ export default async function CodePage({
     getSession(),
   ]);
 
-  // Private snippet: hanya owner atau SUPERADMIN yang boleh lihat
-  // Selain itu → tampilkan "SNIPPET NOT FOUND", bukan redirect ke login
   let initialData = null;
   if (snippet) {
     if (snippet.isPublic) {
