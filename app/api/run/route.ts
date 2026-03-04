@@ -306,7 +306,7 @@ export async function POST(req: NextRequest) {
                 include: { globalFile: { select: { name: true, data: true } } },
               });
               for (const a of attachments) {
-                fs.writeFileSync(path.join(tempDir, a.globalFile.name), a.globalFile.data);
+                fs.writeFileSync(path.join(tempDir, path.basename(a.globalFile.name)), a.globalFile.data);
               }
             } catch (e) {
               console.warn("Warning: failed to load snippet attachments:", e);
@@ -380,6 +380,31 @@ export async function POST(req: NextRequest) {
             TZ: process.env.TZ,
           };
 
+          // ── SSRF guard ─────────────────────────────────────────────────────────
+          // Didefinisikan di luar sandbox object agar tidak merusak syntax object literal.
+          // Memblokir fetch() ke IP internal/metadata sebelum request keluar ke jaringan.
+          const isBlockedUrl = (input: unknown): boolean => {
+            try {
+              const url = new URL(String(input));
+              const host = url.hostname.toLowerCase();
+              if (
+                host === "169.254.169.254" ||           // AWS/GCP/Azure IMDS
+                host === "metadata.google.internal" ||
+                host === "instance-data" ||
+                /^127\./.test(host) ||                 // loopback
+                host === "localhost" ||
+                /^10\./.test(host) ||                  // RFC-1918 Class A
+                /^192\.168\./.test(host) ||            // RFC-1918 Class C
+                /^172\.(1[6-9]|2[0-9]|3[01])\./.test(host) || // RFC-1918 Class B
+                host === "0.0.0.0" ||
+                host.endsWith(".local") ||
+                host.endsWith(".internal")
+              ) return true;
+            } catch { /* URL parse gagal — biarkan fetch() yang tangani sendiri */ }
+            return false;
+          };
+          // ───────────────────────────────────────────────────────────────────────
+
           const sandbox: Record<string, unknown> = {
             console: fakeConsole,
             require: sandboxRequire,
@@ -400,6 +425,9 @@ export async function POST(req: NextRequest) {
             setTimeout, clearTimeout, setInterval, clearInterval,
             setImmediate, clearImmediate, queueMicrotask,
             fetch: async (input: any, init?: any): Promise<Response> => {
+              if (isBlockedUrl(input)) {
+                throw new Error("fetch blocked: requests to internal/metadata addresses are not allowed.");
+              }
               // Native ReadableStream dari host context tidak bisa di-iterate
               // dari dalam VM sandbox (cross-context boundary).
               // Solusi: pipe lewat TransformStream baru yang dibuat di context yang sama

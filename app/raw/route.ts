@@ -4,6 +4,12 @@ import { getSession } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
+// Sanitize filename for use in Content-Disposition header value.
+// Strips CR/LF (header injection) and double-quotes (attribute break).
+function safeFilename(name: string): string {
+  return name.replace(/[\r\n"]/g, "_");
+}
+
 export async function GET(req: NextRequest) {
   const id = req.nextUrl.searchParams.get("v");
 
@@ -39,7 +45,7 @@ export async function GET(req: NextRequest) {
       status: 200,
       headers: {
         "Content-Type": "text/plain; charset=utf-8",
-        "Content-Disposition": `inline; filename="${snippet.filename}"`,
+        "Content-Disposition": `inline; filename="${safeFilename(snippet.filename)}"`,  // sanitized: no CR/LF/quotes
         "Cache-Control": "no-store",
       },
     });

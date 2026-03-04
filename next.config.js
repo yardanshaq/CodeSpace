@@ -1,8 +1,5 @@
 /** @type {import('next').NextConfig} */
 
-// Daftar package yang dijalankan di luar bundler Next.js (server-side only).
-// Ini perlu karena package-package ini tidak bisa di-bundle oleh webpack
-// (biasanya karena punya native addon atau ESM-only di environment tertentu).
 const RUN_ROUTE_EXTERNALS = [
   // HTTP clients
   "axios", "node-fetch", "got", "superagent", "cross-fetch",
@@ -30,32 +27,60 @@ const RUN_ROUTE_EXTERNALS = [
   "ws", "eventsource",
 ];
 
+const isDev = process.env.NODE_ENV !== "production";
+
+// CSP dibedakan dev vs production:
+// - Dev  : tambah 'unsafe-eval' (Next.js HMR source maps) + ws:/wss: (webpack HMR websocket)
+// - Prod : ketat, tanpa eval, connect hanya HTTPS
+const buildCsp = () => {
+  const scriptSrc = isDev
+    ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
+    : "script-src 'self' 'unsafe-inline'";
+
+  // Dev butuh ws://localhost untuk webpack HMR
+  const connectSrc = isDev
+    ? "connect-src 'self' ws: wss:"
+    : "connect-src 'self'";
+
+  return [
+    "default-src 'self'",
+    scriptSrc,
+    "style-src 'self' 'unsafe-inline'",
+    // cdn.nekohime.site untuk favicon & asset gambar
+    "img-src 'self' data: https://cdn.nekohime.site",
+    connectSrc,
+    "font-src 'self' data:",
+    // Izinkan load favicon/icon dari CDN eksternal via <link>
+    "prefetch-src 'self' https://cdn.nekohime.site",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ].join("; ");
+};
+
 const nextConfig = {
   experimental: {
     serverComponentsExternalPackages: RUN_ROUTE_EXTERNALS,
     serverActions: {
-      // Tambahkan domain production kamu di sini jika sudah di-deploy
       allowedOrigins: ["localhost:3000"],
       bodySizeLimit: "10mb",
     },
   },
 
-  // Security headers untuk semua response
   async headers() {
+    const csp = buildCsp();
+
     return [
       {
         source: "/(.*)",
         headers: [
-          // Cegah halaman dimuat dalam iframe dari domain lain (clickjacking)
-          { key: "X-Frame-Options", value: "SAMEORIGIN" },
-          // Cegah browser menebak MIME type sendiri
-          { key: "X-Content-Type-Options", value: "nosniff" },
-          // Matikan referrer untuk request ke domain lain
-          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          // Batasi akses ke fitur browser yang sensitif
-          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
-          // Paksa HTTPS di production (30 hari)
-          { key: "Strict-Transport-Security", value: "max-age=2592000; includeSubDomains" },
+          { key: "Content-Security-Policy",   value: csp },
+          { key: "X-Frame-Options",            value: "DENY" },
+          { key: "X-Content-Type-Options",     value: "nosniff" },
+          { key: "Referrer-Policy",            value: "strict-origin-when-cross-origin" },
+          { key: "Permissions-Policy",         value: "camera=(), microphone=(), geolocation=()" },
+          { key: "Strict-Transport-Security",  value: "max-age=2592000; includeSubDomains" },
         ],
       },
     ];
@@ -66,7 +91,6 @@ const nextConfig = {
       config.externals = [
         ...(Array.isArray(config.externals) ? config.externals : [config.externals].filter(Boolean)),
         ...RUN_ROUTE_EXTERNALS,
-        // Native / binary packages
         "puppeteer-core",
         "@sparticuz/chromium",
         "sharp",

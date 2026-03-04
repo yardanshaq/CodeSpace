@@ -119,6 +119,12 @@ export async function POST(req: NextRequest) {
     if (!title || !code) {
       return NextResponse.json({ error: "Title and code required" }, { status: 400 });
     }
+    if (typeof title !== "string" || title.length > 200) {
+      return NextResponse.json({ error: "Title must be under 200 characters" }, { status: 400 });
+    }
+    if (typeof code !== "string" || code.length > 500_000) {
+      return NextResponse.json({ error: "Code must be under 500 KB" }, { status: 400 });
+    }
 
     // MEMBER hanya boleh post public
     const isMember = session.role === "MEMBER";

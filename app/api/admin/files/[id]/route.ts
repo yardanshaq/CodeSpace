@@ -4,6 +4,27 @@ import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
+// MIME types that can execute scripts or cause XSS when served inline.
+const BLOCKED_INLINE_MIME = new Set([
+  "text/html",
+  "text/xml",
+  "application/xml",
+  "application/xhtml+xml",
+  "image/svg+xml",
+  "application/javascript",
+  "text/javascript",
+  "application/json",
+]);
+
+function safeMime(mimeType: string): string {
+  const base = mimeType.split(";")[0].trim().toLowerCase();
+  return BLOCKED_INLINE_MIME.has(base) ? "application/octet-stream" : mimeType;
+}
+
+function safeFilename(name: string): string {
+  return name.replace(/[\r\n"]/g, "_");
+}
+
 // GET - public, tidak perlu login
 export async function GET(
   _req: NextRequest,
@@ -20,10 +41,11 @@ export async function GET(
   return new NextResponse(new Uint8Array(file.data), {
     status: 200,
     headers: {
-      "Content-Type": file.mimeType,
-      "Content-Disposition": `inline; filename="${file.name}"`,
+      "Content-Type": safeMime(file.mimeType),
+      "Content-Disposition": `inline; filename="${safeFilename(file.name)}"`,
       "Content-Length": String(file.size),
       "Cache-Control": "public, max-age=31536000",
+      "X-Content-Type-Options": "nosniff",
     },
   });
 }

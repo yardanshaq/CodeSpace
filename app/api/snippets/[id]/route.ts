@@ -100,6 +100,12 @@ export async function PUT(
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     const { title, code, category, isPublic } = await req.json();
+    if (title !== undefined && (typeof title !== "string" || title.length > 200)) {
+      return NextResponse.json({ error: "Title must be under 200 characters" }, { status: 400 });
+    }
+    if (code !== undefined && (typeof code !== "string" || code.length > 500_000)) {
+      return NextResponse.json({ error: "Code must be under 500 KB" }, { status: 400 });
+    }
     const filename =
       (title || snippet.title)
         .toLowerCase()

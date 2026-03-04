@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Username already taken" }, { status: 409 });
     }
 
-    const hashed = await bcrypt.hash(password, 10);
+    const hashed = await bcrypt.hash(password, 12);
     const admin = await prisma.admin.create({
       data: { username, password: hashed, role: "ADMIN" },
       select: { id: true, username: true, role: true, createdAt: true, _count: { select: { snippets: true } } },

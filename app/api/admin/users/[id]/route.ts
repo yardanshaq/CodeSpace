@@ -42,7 +42,7 @@ export async function PUT(
       if (password.length < 6) {
         return NextResponse.json({ error: "Password must be at least 6 characters" }, { status: 400 });
       }
-      updateData.password = await bcrypt.hash(password, 10);
+      updateData.password = await bcrypt.hash(password, 12);
     }
 
     if (Object.keys(updateData).length === 0) {

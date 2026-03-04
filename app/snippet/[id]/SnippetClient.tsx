@@ -27,46 +27,77 @@ interface Snippet {
 }
 
 function highlight(code: string): string {
-  const escape = (s: string) =>
+  // Escape HTML special characters — runs ONCE on the raw source.
+  // All pattern matching happens on this escaped string BEFORE any HTML is injected.
+  const escapeHtml = (s: string) =>
     s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  // Patterns in descending priority order.
+  // Using a single-pass approach: every pattern is matched against the
+  // already-escaped-but-not-yet-HTML-ified line simultaneously, so later
+  // patterns can NEVER operate on HTML tags injected by earlier ones.
+  // This eliminates the cascading-regex XSS risk entirely.
+  const TOKEN_PATTERNS: Array<{ re: RegExp; color: string; italic?: boolean }> = [
+    // 1. Single-line comments (highest priority)
+    { re: /\/\/.*$/gm,                   color: "#6a9955", italic: true },
+    // 2. Template literals
+    { re: /`(?:[^`\\]|\\.)*`/g,        color: "#ce9178" },
+    // 3. Double-quoted strings
+    { re: /"(?:[^"\\]|\\.)*"/g,        color: "#ce9178" },
+    // 4. Single-quoted strings
+    { re: /'(?:[^'\\]|\\.)*'/g,     color: "#ce9178" },
+    // 5. Keywords
+    { re: /\b(?:const|let|var|function|async|await|return|if|else|for|while|do|switch|case|break|continue|new|delete|typeof|instanceof|try|catch|finally|throw|import|export|default|class|extends|super|this|true|false|null|undefined|void|of|in)\b/g, color: "#569cd6" },
+    // 6. Numbers
+    { re: /\b\d+(?:\.\d+)?\b/g,         color: "#b5cea8" },
+    // 7. Built-in globals
+    { re: /\b(?:console|process|require|module|exports|Promise|setTimeout|setInterval|clearTimeout|clearInterval|fetch|URL|Buffer|Error|Object|Array|String|Number|Boolean|JSON|Math|Date|Map|Set|RegExp)\b/g, color: "#4ec9b0" },
+    // 8. Function calls (lookahead — m[0] is identifier only, no "(" consumed)
+    { re: /\b([a-zA-Z_$][\w$]*)(?=\s*\()/g, color: "#dcdcaa" },
+    // 9. Property names after "." (lookbehind — m[0] is identifier only, no "." consumed)
+    { re: /(?<=\.)([a-zA-Z_$][\w$]*)/g,   color: "#9cdcfe" },
+  ];
 
   return code
     .split("\n")
     .map((rawLine) => {
-      let line = escape(rawLine);
-      line = line.replace(
-        /(&quot;[^&]*?&quot;|&#x27;[^&#x27;]*?&#x27;|`[^`]*?`|"[^"]*?"|'[^']*?')/g,
-        '<span style="color:#ce9178">$1</span>'
-      );
-      line = line.replace(
-        /(\/\/.*$)/gm,
-        '<span style="color:#6a9955;font-style:italic">$1</span>'
-      );
-      line = line.replace(
-        /\b(const|let|var|function|async|await|return|if|else|for|while|do|switch|case|break|continue|new|delete|typeof|instanceof|try|catch|finally|throw|import|export|default|class|extends|super|this|true|false|null|undefined|void|of|in)\b/g,
-        '<span style="color:#569cd6">$1</span>'
-      );
-      line = line.replace(
-        /\b(\d+(\.\d+)?)\b/g,
-        '<span style="color:#b5cea8">$1</span>'
-      );
-      line = line.replace(
-        /\b(console|process|require|module|exports|Promise|setTimeout|setInterval|clearTimeout|clearInterval|fetch|URL|Buffer|Error|Object|Array|String|Number|Boolean|JSON|Math|Date|Map|Set|RegExp)\b/g,
-        '<span style="color:#4ec9b0">$1</span>'
-      );
-      line = line.replace(
-        /\b([a-zA-Z_$][\w$]*)\s*(?=\()/g,
-        '<span style="color:#dcdcaa">$1</span>'
-      );
-      line = line.replace(
-        /\.([a-zA-Z_$][\w$]*)/g,
-        '.<span style="color:#9cdcfe">$1</span>'
-      );
-      return line;
+      // Step 1: HTML-escape the source line once.
+      const line = escapeHtml(rawLine);
+
+      // Step 2: Collect ALL token matches from the escaped line.
+      type Span = { start: number; end: number; color: string; italic?: boolean };
+      const spans: Span[] = [];
+
+      for (const { re, color, italic } of TOKEN_PATTERNS) {
+        re.lastIndex = 0;
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(line)) !== null) {
+          spans.push({ start: m.index, end: m.index + m[0].length, color, italic });
+          if (m[0].length === 0) re.lastIndex++; // guard zero-length matches
+        }
+      }
+
+      // Step 3: Sort by position; longer span wins ties (higher priority).
+      spans.sort((a, b) => a.start - b.start || b.end - a.end);
+
+      // Step 4: Single-pass render — skip any span overlapping an already-emitted one.
+      let result = "";
+      let cursor = 0;
+
+      for (const span of spans) {
+        if (span.start < cursor) continue; // overlapping — skip
+        result += line.slice(cursor, span.start);
+        const style = `color:${span.color}${span.italic ? ";font-style:italic" : ""}`;
+        // Content is already HTML-escaped — safe to interpolate directly
+        result += `<span style="${style}">${line.slice(span.start, span.end)}</span>`;
+        cursor = span.end;
+      }
+
+      result += line.slice(cursor);
+      return result;
     })
     .join("\n");
 }
-
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
