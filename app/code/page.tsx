@@ -28,7 +28,6 @@ export async function generateMetadata({
   if (!id) return { title: "CodeSpace", description: "a place to share simple snippets" };
 
   try {
-    // Query ringan — hanya field yang dibutuhkan untuk metadata, tidak block render utama
     const snippet = await prisma.snippet.findFirst({
       where: { OR: [{ id }, { filename: id }], isPublic: true },
       select: { title: true, category: true, filename: true, admin: { select: { username: true } } },
@@ -39,18 +38,18 @@ export async function generateMetadata({
     const desc = `${snippet.category} snippet by ${snippet.admin.username} — ${snippet.filename}`;
 
     return {
-      title:       snippet.title,
+      title: snippet.title,
       description: desc,
       openGraph: {
-        title:       snippet.title,
+        title: snippet.title,
         description: desc,
-        url:         `${BASE_URL}/code?v=${snippet.filename}`,
-        siteName:    "CodeSpace",
-        type:        "website",
+        url: `${BASE_URL}/code?v=${snippet.filename}`,
+        siteName: "CodeSpace",
+        type: "website",
       },
       twitter: {
-        card:        "summary",
-        title:       snippet.title,
+        card: "summary",
+        title: snippet.title,
         description: desc,
       },
     };
@@ -67,25 +66,31 @@ export default async function CodePage({
   const id = searchParams.v;
   if (!id) redirect("/");
 
-  const [snippet, session] = await Promise.all([
-    prisma.snippet.findFirst({
-      where: { OR: [{ id }, { filename: id }] },
-      include,
-    }),
-    getSession(),
-  ]);
-
+  // Fetch dengan timeout — kalau DB lambat/cold start, tetap render halaman
+  // dengan initialData null. Client akan fetch sendiri via /api/snippets/:id
   let initialData = null;
-  if (snippet) {
-    if (snippet.isPublic) {
-      initialData = { ...snippet, attachments: snippet.attachments.map((a) => a.globalFile) };
-    } else {
-      const isOwner = session?.id === snippet.adminId;
-      const isSuperAdmin = session?.role === "SUPERADMIN";
-      if (isOwner || isSuperAdmin) {
-        initialData = { ...snippet, attachments: snippet.attachments.map((a) => a.globalFile) };
+  try {
+    const [snippet, session] = await Promise.all([
+      Promise.race([
+        prisma.snippet.findFirst({ where: { OR: [{ id }, { filename: id }] }, include }),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
+      ]),
+      getSession(),
+    ]);
+
+    if (snippet) {
+      if (snippet.isPublic) {
+        initialData = { ...snippet, attachments: snippet.attachments.map((a: any) => a.globalFile) };
+      } else {
+        const isOwner = session?.id === snippet.adminId;
+        const isSuperAdmin = session?.role === "SUPERADMIN";
+        if (isOwner || isSuperAdmin) {
+          initialData = { ...snippet, attachments: snippet.attachments.map((a: any) => a.globalFile) };
+        }
       }
     }
+  } catch {
+    // DB error — render tanpa initialData, client fetch sendiri
   }
 
   return <SnippetClient id={id} initialData={initialData as any} />;
