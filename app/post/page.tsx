@@ -69,6 +69,19 @@ export default function PostPage() {
   const [showRunModal, setShowRunModal] = useState(false);
   const [showRegisterModal, setShowRegisterModal] = useState(false);
 
+  // Custom confirm dialog
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({ open: false, title: "", message: "", onConfirm: () => {} });
+
+  const showConfirm = (title: string, message: string, onConfirm: () => void) => {
+    setConfirmDialog({ open: true, title, message, onConfirm });
+  };
+  const closeConfirm = () => setConfirmDialog(prev => ({ ...prev, open: false }));
+
   const [editSnippet, setEditSnippet] = useState<Snippet | null>(null);
   const [runSnippet, setRunSnippet] = useState<Snippet | null>(null);
   const [runOutput, setRunOutput] = useState("");
@@ -264,9 +277,15 @@ export default function PostPage() {
   };
 
   const handleDeleteSnippet = async (id: string) => {
-    if (!confirm("Delete this snippet?")) return;
-    const res = await fetch(`/api/snippets/${id}`, { method: "DELETE" });
-    if (res.ok) fetchSnippets(true);
+    showConfirm(
+      "DELETE SNIPPET",
+      "This snippet will be permanently deleted. This action cannot be undone.",
+      async () => {
+        closeConfirm();
+        const res = await fetch(`/api/snippets/${id}`, { method: "DELETE" });
+        if (res.ok) fetchSnippets(true);
+      }
+    );
   };
 
   const openEdit = (s: Snippet) => {
@@ -329,18 +348,24 @@ export default function PostPage() {
 
   const handleFileDelete = async (fileId: string) => {
     if (!editSnippet) return;
-    if (!confirm("Delete this file?")) return;
-    const res = await fetch(`/api/snippets/${editSnippet.id}/files`, {
+    showConfirm(
+      "DELETE FILE",
+      "This file will be permanently removed from the snippet.",
+      async () => {
+        closeConfirm();
+        const res = await fetch(`/api/snippets/${editSnippet!.id}/files`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ fileId }),
     });
-    if (res.ok) {
-      setEditFiles(prev => prev.filter(f => f.id !== fileId));
-    } else {
-      const data = await res.json();
-      setFileError(data.error || "Gagal hapus file");
-    }
+        if (res.ok) {
+          setEditFiles(prev => prev.filter(f => f.id !== fileId));
+        } else {
+          const data = await res.json();
+          setFileError(data.error || "Gagal hapus file");
+        }
+      }
+    );
   };
 
   const handleRegister = async () => {
@@ -767,6 +792,92 @@ export default function PostPage() {
         </div>
       )}
 
+      {/* ── CUSTOM CONFIRM DIALOG ── */}
+      {confirmDialog.open && (
+        <div
+          style={{
+            position: "fixed", inset: 0, zIndex: 99999,
+            background: "rgba(0,0,0,0.65)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            backdropFilter: "blur(3px)",
+            animation: "fadeIn 0.12s ease",
+          }}
+          onClick={closeConfirm}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: "var(--surface)",
+              border: "2px solid var(--border-color)",
+              borderRadius: 12,
+              boxShadow: "0 8px 40px rgba(0,0,0,0.5), 4px 4px 0 var(--border-color)",
+              padding: "28px 28px 22px",
+              maxWidth: 380,
+              width: "calc(100vw - 40px)",
+              animation: "slideUp 0.15s ease",
+            }}
+          >
+            {/* Icon + Title */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+              <div style={{
+                width: 36, height: 36, borderRadius: 8, flexShrink: 0,
+                background: "rgba(239,68,68,0.12)", border: "1.5px solid rgba(239,68,68,0.3)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="3 6 5 6 21 6"/>
+                  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                  <path d="M10 11v6"/><path d="M14 11v6"/>
+                  <path d="M9 6V4h6v2"/>
+                </svg>
+              </div>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: "var(--text)", letterSpacing: "0.04em" }}>
+                {confirmDialog.title}
+              </span>
+            </div>
+
+            {/* Message */}
+            <p style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6, margin: "0 0 22px 0" }}>
+              {confirmDialog.message}
+            </p>
+
+            {/* Buttons */}
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                onClick={closeConfirm}
+                style={{
+                  flex: 1, padding: "10px 0",
+                  background: "var(--surface2)", border: "1.5px solid var(--border-color)",
+                  borderRadius: 8, cursor: "pointer",
+                  fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700,
+                  color: "var(--text)", letterSpacing: "0.05em",
+                  transition: "border-color 0.15s",
+                }}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = "var(--text)"}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = "var(--border-color)"}
+              >
+                CANCEL
+              </button>
+              <button
+                onClick={confirmDialog.onConfirm}
+                style={{
+                  flex: 1, padding: "10px 0",
+                  background: "#ef4444", border: "1.5px solid #dc2626",
+                  borderRadius: 8, cursor: "pointer",
+                  fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700,
+                  color: "#fff", letterSpacing: "0.05em",
+                  transition: "background 0.15s",
+                }}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "#dc2626"}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "#ef4444"}
+              >
+                DELETE
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <style>{`
         @keyframes blink {
           0%, 100% { opacity: 1; }
@@ -775,6 +886,14 @@ export default function PostPage() {
         @keyframes spin {
           from { transform: rotate(0deg); }
           to { transform: rotate(360deg); }
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes slideUp {
+          from { transform: translateY(12px); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
         }
       `}</style>
     </>
