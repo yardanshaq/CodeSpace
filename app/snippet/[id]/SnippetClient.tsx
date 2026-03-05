@@ -132,6 +132,7 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
   const [running, setRunning] = useState(false);
   const [copiedOutput, setCopiedOutput] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [previewFile, setPreviewFile] = useState<GlobalFile | null>(null);
 
   const lastUpdatedAt = useRef<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -270,7 +271,11 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
     if (initialData && !lastUpdatedAt.current) {
       lastUpdatedAt.current = initialData.updatedAt;
     }
-    pollRef.current = setInterval(() => fetchSnippet(true), 3000);
+    // Single interval: poll snippet + attachments together every 3s
+    pollRef.current = setInterval(() => {
+      fetchSnippet(true);
+      fetchAttachments();
+    }, 3000);
     loadingTimerRef.current = setTimeout(() => setLoading(false), FETCH_TIMEOUT_MS + 1000);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
@@ -480,38 +485,82 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
         </div>
 
         {attachments.length > 0 && (
-          <div style={{ marginTop: 24 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: "var(--text-muted)" }}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+          <div style={{ marginTop: 28 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, color: "var(--text-muted)", letterSpacing: "0.05em" }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/>
               </svg>
-              Source Files
-              <span style={{ background: "var(--text)", color: "var(--surface)", borderRadius: 4, padding: "1px 7px", fontSize: 10 }}>
+              ATTACHED FILES
+              <span style={{ background: "var(--text)", color: "var(--surface)", borderRadius: 4, padding: "1px 7px", fontSize: 10, fontWeight: 700 }}>
                 {attachments.length}
               </span>
             </div>
-            <div style={{ border: "2.5px solid var(--border-color)", borderRadius: 10, padding: 16, boxShadow: "4px 4px 0 var(--border-color)", background: "var(--surface)" }}>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
-                {attachments.map((f) => (
-                  <div key={f.id} style={{ width: 200, border: "2px solid var(--border-color)", borderRadius: 8, overflow: "hidden", background: "var(--surface2)", flexShrink: 0 }}>
-                    <div
-                      style={{ width: "100%", height: 160, background: "var(--code-bg)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", borderBottom: "1.5px solid var(--border-color)", cursor: f.mimeType.startsWith("image/") ? "pointer" : "default" }}
-                      onClick={() => f.mimeType.startsWith("image/") && window.open(`/api/files/${f.id}`, "_blank")}
-                    >
-                      {f.mimeType.startsWith("image/") ? (
-                        <img src={`/api/files/${f.id}`} alt={f.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                      ) : (
-                        <div style={{ fontSize: 48, userSelect: "none" }}>{fileEmoji(f.mimeType)}</div>
-                      )}
-                    </div>
-                    <div style={{ padding: "8px 10px 4px", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {f.name}
-                    </div>
-                    <div style={{ padding: "0 10px 10px", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-muted)" }}>
-                      {formatBytes(f.size)}
-                    </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(90px, 1fr))", gap: 10 }}>
+              {attachments.map((f) => (
+                <div
+                  key={f.id}
+                  onClick={() => f.mimeType.startsWith("image/") && setPreviewFile(f)}
+                  style={{
+                    border: "1.5px solid var(--border-color)",
+                    borderRadius: 8, overflow: "hidden",
+                    background: "var(--surface2)",
+                    cursor: f.mimeType.startsWith("image/") ? "zoom-in" : "default",
+                    transition: "border-color 0.15s, transform 0.15s",
+                  }}
+                  onMouseEnter={e => {
+                    (e.currentTarget as HTMLElement).style.borderColor = "var(--text)";
+                    if (f.mimeType.startsWith("image/")) (e.currentTarget as HTMLElement).style.transform = "scale(1.03)";
+                  }}
+                  onMouseLeave={e => {
+                    (e.currentTarget as HTMLElement).style.borderColor = "var(--border-color)";
+                    (e.currentTarget as HTMLElement).style.transform = "scale(1)";
+                  }}
+                >
+                  <div style={{ width: "100%", aspectRatio: "1", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--code-bg)", overflow: "hidden" }}>
+                    {f.mimeType.startsWith("image/") ? (
+                      <img src={`/api/files/${f.id}`} alt={f.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    ) : (
+                      <span style={{ fontSize: 28 }}>{fileEmoji(f.mimeType)}</span>
+                    )}
                   </div>
-                ))}
+                  <div style={{ padding: "6px 7px" }}>
+                    <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)" }}>{f.name}</div>
+                    <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--text-muted)", marginTop: 1 }}>{formatBytes(f.size)}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── IMAGE PREVIEW POPUP ── */}
+        {previewFile && (
+          <div
+            onClick={() => setPreviewFile(null)}
+            style={{
+              position: "fixed", inset: 0, zIndex: 9999,
+              background: "rgba(0,0,0,0.85)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              cursor: "zoom-out",
+              backdropFilter: "blur(4px)",
+            }}
+          >
+            <div onClick={e => e.stopPropagation()} style={{ position: "relative", maxWidth: "90vw", maxHeight: "90vh", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+              <img
+                src={`/api/files/${previewFile.id}`}
+                alt={previewFile.name}
+                style={{ maxWidth: "90vw", maxHeight: "80vh", objectFit: "contain", borderRadius: 8, boxShadow: "0 8px 48px rgba(0,0,0,0.6)" }}
+              />
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "rgba(255,255,255,0.6)", display: "flex", alignItems: "center", gap: 10 }}>
+                <span>{previewFile.name}</span>
+                <span style={{ opacity: 0.4 }}>·</span>
+                <span>{formatBytes(previewFile.size)}</span>
+                <button
+                  onClick={() => setPreviewFile(null)}
+                  style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 6, color: "#fff", fontFamily: "var(--font-mono)", fontSize: 10, padding: "4px 12px", cursor: "pointer", marginLeft: 4 }}
+                >
+                  CLOSE
+                </button>
               </div>
             </div>
           </div>

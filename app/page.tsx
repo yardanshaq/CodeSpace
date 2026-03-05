@@ -15,6 +15,7 @@ interface Snippet {
   views: number;
   admin: { username: string };
   createdAt: string;
+  updatedAt: string;
 }
 
 interface NavUser {
@@ -34,6 +35,7 @@ export default function HomePage() {
   const [user, setUser] = useState<NavUser | null>(null);
   const [userChecked, setUserChecked] = useState(false);
   const filterRef = useRef<HTMLDivElement>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const checkAuth = () => {
     fetch("/api/auth/me")
@@ -62,35 +64,58 @@ export default function HomePage() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const fetchSnippets = useCallback(async () => {
-    // Hanya tampil loading screen saat pertama kali, bukan saat search/filter berubah
-    if (isFirstLoad.current) setLoading(true);
+  const fetchSnippets = useCallback(async (silent = false) => {
+    if (!silent && isFirstLoad.current) setLoading(true);
     try {
       const params = new URLSearchParams();
       if (search) params.set("search", search);
+      if (silent) params.set("_", Date.now().toString());
       const res = await fetch(`/api/snippets?${params.toString()}`);
       const data = await res.json();
       const list = Array.isArray(data) ? data : [];
 
       const unique = Array.from(new Set(list.map((s: Snippet) => s.admin.username))) as string[];
-      setAuthors(unique);
 
       const filtered = selectedAuthors.length > 0
         ? list.filter((s: Snippet) => selectedAuthors.includes(s.admin.username))
         : list;
 
-      setSnippets(filtered);
-
-      if (isFirstLoad.current) {
-        setLoading(false);
-        isFirstLoad.current = false;
+      if (silent) {
+        // Smart merge: only update if something actually changed
+        setSnippets(prev => {
+          const prevMap = new Map(prev.map(s => [s.id, s]));
+          const hasChanges =
+            prev.length !== filtered.length ||
+            filtered.some((s: Snippet) => {
+              const old = prevMap.get(s.id);
+              return !old || old.views !== s.views || old.updatedAt !== s.updatedAt || old.title !== s.title;
+            });
+          if (!hasChanges) return prev;
+          return filtered;
+        });
+        setAuthors(unique);
+      } else {
+        setAuthors(unique);
+        setSnippets(filtered);
+        if (isFirstLoad.current) {
+          setLoading(false);
+          isFirstLoad.current = false;
+        }
       }
     } catch { /* silent fail */ }
   }, [search, selectedAuthors]);
 
+  // Initial fetch + re-fetch on search/filter change (debounced)
   useEffect(() => {
-    const timer = setTimeout(fetchSnippets, 300);
+    const timer = setTimeout(() => fetchSnippets(false), 300);
     return () => clearTimeout(timer);
+  }, [fetchSnippets]);
+
+  // Background poll every 3s for live updates (new snippets, deletions, view counts)
+  useEffect(() => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = setInterval(() => fetchSnippets(true), 3000);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [fetchSnippets]);
 
   const toggleAuthor = (a: string) => {

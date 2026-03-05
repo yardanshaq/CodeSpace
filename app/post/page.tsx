@@ -93,14 +93,23 @@ export default function PostPage() {
   const [fileError, setFileError] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  // File attachment state (for create modal — stored locally until snippet is saved)
+  const [createPendingFiles, setCreatePendingFiles] = useState<{ file: File; id: string }[]>([]);
+  const [createFileError, setCreateFileError] = useState("");
+  const createFileInputRef = useRef<HTMLInputElement | null>(null);
+
   const outputRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    fetch("/api/auth/me")
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000); // 8s timeout
+
+    fetch("/api/auth/me", { signal: controller.signal })
       .then((r) => r.json())
       .then((data) => {
         if (!data.authenticated) {
           setCachedUser(null);
+          setLoading(false);
           router.replace("/login");
           return;
         }
@@ -109,7 +118,11 @@ export default function PostPage() {
         setCachedUser(u);
         setLoading(false);
       })
-      .catch(() => router.replace("/login"));
+      .catch(() => {
+        setLoading(false);
+        router.replace("/login");
+      })
+      .finally(() => clearTimeout(timeout));
   }, []);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -214,6 +227,15 @@ export default function PostPage() {
     });
     const data = await res.json();
     if (res.ok) {
+      // Upload any pending files after snippet is created
+      if (createPendingFiles.length > 0) {
+        for (const { file } of createPendingFiles) {
+          const fd = new FormData();
+          fd.append("file", file);
+          await fetch(`/api/snippets/${data.id}/files`, { method: "POST", body: fd });
+        }
+        setCreatePendingFiles([]);
+      }
       setFormSuccess("Snippet created!");
       setForm({ title: "", code: "", category: "Scrape", isPublic: true });
       setTimeout(() => { setShowCreateModal(false); setFormSuccess(""); fetchSnippets(true); }, 800);
@@ -256,7 +278,27 @@ export default function PostPage() {
     setShowEditModal(true);
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCreateFileAdd = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (createFileInputRef.current) createFileInputRef.current.value = "";
+    if (!file) return;
+    const MAX = 10 * 1024 * 1024;
+    if (file.size > MAX) { setCreateFileError("File too large. Maximum 10 MB."); return; }
+    setCreateFileError("");
+    const id = Math.random().toString(36).slice(2);
+    setCreatePendingFiles(prev => {
+      // Replace if same name
+      const idx = prev.findIndex(f => f.file.name === file.name);
+      if (idx >= 0) { const next = [...prev]; next[idx] = { file, id }; return next; }
+      return [...prev, { file, id }];
+    });
+  };
+
+  const handleCreateFileRemove = (id: string) => {
+    setCreatePendingFiles(prev => prev.filter(f => f.id !== id));
+  };
+
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!editSnippet) return;
     const file = e.target.files?.[0];
     if (!e.target.files) return;
@@ -416,7 +458,7 @@ export default function PostPage() {
                 </button>
               </>
             )}
-            <button className="btn btn-teal btn-icon" onClick={() => { setForm({ title: "", code: "", category: "Scrape", isPublic: true }); setFormError(""); setFormSuccess(""); setShowCreateModal(true); }} title="New snippet">
+            <button className="btn btn-teal btn-icon" onClick={() => { setForm({ title: "", code: "", category: "Scrape", isPublic: true }); setFormError(""); setFormSuccess(""); setCreatePendingFiles([]); setCreateFileError(""); setShowCreateModal(true); }} title="New snippet">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
               </svg>
@@ -486,13 +528,73 @@ export default function PostPage() {
                     {form.isPublic ? "PUBLIC" : "PRIVATE"}
                   </button>
                 ) : (
-                  <span className="toggle-btn" style={{ background: "#4ade80", border: "2px solid var(--border-color)", cursor: "default", opacity: 0.7 }}>PUBLIC</span>
+                  <span className="toggle-btn" style={{ background: "#4ade80", border: "2px solid var(--border-color)", cursor: "default", opacity: 0.7, display: "flex", alignItems: "center", justifyContent: "center" }}>PUBLIC</span>
                 )}
               </div>
               <textarea className="textarea-field" placeholder="Paste your code here..." value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} />
+
+              {/* ── FILE ATTACHMENTS (create) ── */}
+              <div style={{ borderTop: "1.5px solid var(--divider)", paddingTop: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                  <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 6 }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/>
+                    </svg>
+                    ATTACHED FILES
+                    {createPendingFiles.length > 0 && (
+                      <span style={{ background: "var(--text)", color: "var(--surface)", borderRadius: 4, padding: "1px 6px", fontSize: 10 }}>
+                        {createPendingFiles.length}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    className="btn btn-teal"
+                    style={{ fontSize: 10, padding: "5px 12px", gap: 5 }}
+                    onClick={() => createFileInputRef.current?.click()}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                    UPLOAD FILE
+                  </button>
+                  <input ref={createFileInputRef} type="file" style={{ display: "none" }} onChange={handleCreateFileAdd} />
+                </div>
+                {createFileError && <div className="alert alert-error" style={{ marginBottom: 8, fontSize: 11 }}>{createFileError}</div>}
+                {createPendingFiles.length === 0 ? (
+                  <div style={{ border: "1.5px dashed var(--border-color)", borderRadius: 8, padding: "20px 16px", textAlign: "center", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-muted)", cursor: "pointer" }}
+                    onClick={() => createFileInputRef.current?.click()}>
+                    Click to attach a file<br/>
+                    <span style={{ fontSize: 10, opacity: 0.6 }}>Max. 10 MB per file · uploaded after save</span>
+                  </div>
+                ) : (
+                  <div style={{ border: "1.5px solid var(--border-color)", borderRadius: 8, overflow: "hidden" }}>
+                    {createPendingFiles.map(({ file, id }, i) => (
+                      <div key={id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderBottom: i < createPendingFiles.length - 1 ? "1px solid var(--divider)" : "none", background: "var(--surface)" }}>
+                        <div style={{ width: 36, height: 36, borderRadius: 6, border: "1.5px solid var(--border-color)", overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--surface2)", fontSize: 16 }}>
+                          {fileEmoji(file.type || "application/octet-stream")}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)" }}>{file.name}</div>
+                          <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>{formatBytes(file.size)}</div>
+                        </div>
+                        <button
+                          onClick={() => handleCreateFileRemove(id)}
+                          style={{ width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "1.5px solid var(--border-color)", borderRadius: 6, cursor: "pointer", color: "var(--text-muted)", flexShrink: 0, transition: "border-color 0.15s, color 0.15s, background 0.15s" }}
+                          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = "var(--red)"; (e.currentTarget as HTMLElement).style.color = "var(--red)"; (e.currentTarget as HTMLElement).style.background = "rgba(239,68,68,0.08)"; }}
+                          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "var(--border-color)"; (e.currentTarget as HTMLElement).style.color = "var(--text-muted)"; (e.currentTarget as HTMLElement).style.background = "none"; }}
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
+                          </svg>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
             <div className="modal-footer">
-              <button className="btn btn-white" onClick={() => setShowCreateModal(false)}>CANCEL</button>
+              <button className="btn btn-white" onClick={() => { setShowCreateModal(false); setCreatePendingFiles([]); setCreateFileError(""); }}>CANCEL</button>
               <button className="btn btn-teal" onClick={handleCreateSnippet} disabled={formLoading} title="Ctrl+S">
                 {formLoading ? "SAVING..." : "SAVE CODE"}{!formLoading && <span style={{ fontSize: 9, opacity: .5, marginLeft: 4 }}>Ctrl+S</span>}
               </button>
@@ -519,19 +621,19 @@ export default function PostPage() {
                     {form.isPublic ? "PUBLIC" : "PRIVATE"}
                   </button>
                 ) : (
-                  <span className="toggle-btn" style={{ background: "#4ade80", border: "2px solid var(--border-color)", cursor: "default", opacity: 0.7 }}>PUBLIC</span>
+                  <span className="toggle-btn" style={{ background: "#4ade80", border: "2px solid var(--border-color)", cursor: "default", opacity: 0.7, display: "flex", alignItems: "center", justifyContent: "center" }}>PUBLIC</span>
                 )}
               </div>
               <textarea className="textarea-field" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} />
 
-              {/* ── FILE ATTACHMENT SECTION ── */}
+              {/* ── FILE ATTACHMENTS (edit) ── */}
               <div style={{ borderTop: "1.5px solid var(--divider)", paddingTop: 12 }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
                   <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 6 }}>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                      <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/>
                     </svg>
-                    SOURCE FILES
+                    ATTACHED FILES
                     {editFiles.length > 0 && (
                       <span style={{ background: "var(--text)", color: "var(--surface)", borderRadius: 4, padding: "1px 6px", fontSize: 10 }}>
                         {editFiles.length}
@@ -560,77 +662,38 @@ export default function PostPage() {
                       </>
                     )}
                   </button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    style={{ display: "none" }}
-                    onChange={handleFileUpload}
-                  />
+                  <input ref={fileInputRef} type="file" style={{ display: "none" }} onChange={handleFileUpload} />
                 </div>
-
-                {fileError && (
-                  <div className="alert alert-error" style={{ marginBottom: 8, fontSize: 11 }}>{fileError}</div>
-                )}
-
+                {fileError && <div className="alert alert-error" style={{ marginBottom: 8, fontSize: 11 }}>{fileError}</div>}
                 {editFiles.length === 0 ? (
-                  <div style={{
-                    border: "1.5px dashed var(--border-color)", borderRadius: 8,
-                    padding: "20px 16px", textAlign: "center",
-                    fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-muted)",
-                    cursor: "pointer"
-                  }} onClick={() => fileInputRef.current?.click()}>
-                    Click or drag & drop a file here<br/>
+                  <div style={{ border: "1.5px dashed var(--border-color)", borderRadius: 8, padding: "20px 16px", textAlign: "center", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-muted)", cursor: "pointer" }}
+                    onClick={() => fileInputRef.current?.click()}>
+                    Click to attach a file<br/>
                     <span style={{ fontSize: 10, opacity: 0.6 }}>Max. 10 MB per file</span>
                   </div>
                 ) : (
                   <div style={{ border: "1.5px solid var(--border-color)", borderRadius: 8, overflow: "hidden" }}>
                     {editFiles.map((f, i) => (
-                      <div key={f.id} style={{
-                        display: "flex", alignItems: "center", gap: 10, padding: "10px 12px",
-                        borderBottom: i < editFiles.length - 1 ? "1px solid var(--divider)" : "none",
-                        background: "var(--surface)"
-                      }}>
-                        {/* Preview / icon */}
+                      <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderBottom: i < editFiles.length - 1 ? "1px solid var(--divider)" : "none", background: "var(--surface)" }}>
                         <div style={{ width: 36, height: 36, borderRadius: 6, border: "1.5px solid var(--border-color)", overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--surface2)", fontSize: 16 }}>
                           {f.mimeType.startsWith("image/") ? (
                             <img src={`/api/files/${f.id}`} alt={f.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                           ) : fileEmoji(f.mimeType)}
                         </div>
-                        {/* Info */}
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)" }}>
-                            {f.name}
-                          </div>
-                          <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
-                            {formatBytes(f.size)}
-                          </div>
+                          <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)" }}>{f.name}</div>
+                          <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>{formatBytes(f.size)}</div>
                         </div>
-                        {/* Actions */}
-                        <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                          {f.mimeType.startsWith("image/") && (
-                            <a href={`/api/files/${f.id}`} target="_blank" rel="noopener noreferrer"
-                              title="View full"
-                              style={{ width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "1.5px solid var(--border-color)", borderRadius: 6, cursor: "pointer", color: "var(--text-muted)", textDecoration: "none", flexShrink: 0, transition: "border-color 0.15s, color 0.15s" }}
-                              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = "var(--text)"; (e.currentTarget as HTMLElement).style.color = "var(--text)"; }}
-                              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "var(--border-color)"; (e.currentTarget as HTMLElement).style.color = "var(--text-muted)"; }}
-                            >
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
-                              </svg>
-                            </a>
-                          )}
-                          <button
-                            onClick={() => handleFileDelete(f.id)}
-                            title="Delete file"
-                            style={{ width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "1.5px solid var(--border-color)", borderRadius: 6, cursor: "pointer", color: "var(--text-muted)", flexShrink: 0, transition: "border-color 0.15s, color 0.15s, background 0.15s" }}
-                            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = "var(--red)"; (e.currentTarget as HTMLElement).style.color = "var(--red)"; (e.currentTarget as HTMLElement).style.background = "rgba(239,68,68,0.08)"; }}
-                            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "var(--border-color)"; (e.currentTarget as HTMLElement).style.color = "var(--text-muted)"; (e.currentTarget as HTMLElement).style.background = "none"; }}
-                          >
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                              <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
-                            </svg>
-                          </button>
-                        </div>
+                        <button
+                          onClick={() => handleFileDelete(f.id)}
+                          style={{ width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "1.5px solid var(--border-color)", borderRadius: 6, cursor: "pointer", color: "var(--text-muted)", flexShrink: 0, transition: "border-color 0.15s, color 0.15s, background 0.15s" }}
+                          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = "var(--red)"; (e.currentTarget as HTMLElement).style.color = "var(--red)"; (e.currentTarget as HTMLElement).style.background = "rgba(239,68,68,0.08)"; }}
+                          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "var(--border-color)"; (e.currentTarget as HTMLElement).style.color = "var(--text-muted)"; (e.currentTarget as HTMLElement).style.background = "none"; }}
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
+                          </svg>
+                        </button>
                       </div>
                     ))}
                   </div>
