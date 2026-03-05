@@ -4,15 +4,16 @@ import path from "path";
 import os from "os";
 import fs from "fs";
 import { createRequire } from "module";
+import { redis } from "@/lib/redis";
 import { prisma } from "@/lib/prisma";
 
 export const maxDuration = 200;
 export const dynamic = "force-dynamic";
 
-// Daftar semua module yang tersedia untuk dipakai di dalam snippet.
-// Setiap entry di-require saat server pertama kali start (lazy init).
-// Jika module gagal di-require, nilainya null dan akan throw error saat diakses snippet.
-// Catatan: `moment` dihapus karena sudah deprecated — gunakan `dayjs` sebagai gantinya.
+// List of all modules available for use inside snippets.
+// Each entry is required when the server first starts (lazy init).
+// If a module fails to load, its value is null and will throw when accessed by a snippet.
+// Note: `moment` removed as deprecated — use `dayjs` instead.
 const MODULE_MAP: Record<string, unknown> = {
   "axios": (() => { try { return require("axios"); } catch { return null; } })(),
   "node-fetch": (() => { try { return require("node-fetch"); } catch { return null; } })(),
@@ -70,8 +71,8 @@ const MODULE_MAP: Record<string, unknown> = {
   "json5": (() => { try { return require("json5"); } catch { return null; } })(),
   "ws": (() => { try { return require("ws"); } catch { return null; } })(),
   "eventsource": (() => { try { return require("eventsource"); } catch { return null; } })(),
-  // fs dan fs/promises di-inject per-request dengan path restriction (lihat sandboxedFs di bawah)
-  // JANGAN ganti ke require("fs") mentah — akan bisa baca seluruh source code server
+  // fs and fs/promises are injected per-request with path restriction (see sandboxedFs below)
+  // DO NOT replace with raw require('fs') — that would expose the entire server source
   "path": require("path"),
   "os": require("os"),
   "crypto": require("crypto"),
@@ -90,18 +91,23 @@ const MODULE_MAP: Record<string, unknown> = {
   "assert": require("assert")
 };
 
-// createRequire: pakai path ke file JS agar webpack tidak error
+// createRequire: use a JS file path so webpack does not error
 const _requireBase = (typeof __filename !== "undefined" ? __filename : null)
   ?? path.join(process.cwd(), "node_modules", "next", "dist", "server", "app-render", "work-unit-async-storage.external.js");
 const projectRequire = createRequire(_requireBase);
 
 
-// Kumpulkan nilai env sensitif sekali saat server start — bukan per-request
-// Dipakai untuk redact output snippet agar env vars tidak bocor ke client
+// Collect sensitive env values once at server start — not per-request
+// Used to redact snippet output so env vars do not leak to the client
 const SENSITIVE_ENV_VALUES = Object.entries(process.env)
   .filter(([key]) => !["NODE_ENV", "TZ", "PATH", "HOME", "USER", "SHELL", "LANG", "LC_ALL"].includes(key))
   .map(([, v]) => v)
-  .filter((v): v is string => typeof v === "string" && v.length >= 8);
+  .filter((v): v is string =>
+    typeof v === "string" &&
+    v.length >= 8 &&
+    // Exclude path-like values — not secrets, would cause false redaction of file paths in error messages
+    !v.includes("/") &&
+    !v.includes("\\"));
 
 const sanitizeOutput = (text: string): string => {
   let result = text;
@@ -113,7 +119,7 @@ const sanitizeOutput = (text: string): string => {
   return result;
 };
 
-// Modul yang SELALU diblokir, bahkan kalau ada di MODULE_MAP
+// Modules that are ALWAYS blocked, even if present in MODULE_MAP
 const BLOCKED_MODULES = new Set([
   "process",         // bypass sandbox process.env
   "child_process",   // exec command server
@@ -132,7 +138,7 @@ const BLOCKED_MODULES = new Set([
 ]);
 
 function realRequire(moduleName: string) {
-  // Blokir modul berbahaya — tidak ada pengecualian
+  // Block dangerous modules — no exceptions
   if (BLOCKED_MODULES.has(moduleName)) {
     throw new Error(`Module '${moduleName}' is not allowed in the sandbox.`);
   }
@@ -150,8 +156,8 @@ function realRequire(moduleName: string) {
     return MODULE_MAP[moduleName];
   }
 
-  // TIDAK ada fallback ke projectRequire atau eval("require")
-  // Hanya modul yang ada di MODULE_MAP yang diizinkan
+  // NO fallback to projectRequire or eval("require")
+  // Only modules listed in MODULE_MAP are allowed
   const availableModules = Object.keys(MODULE_MAP)
     .filter(k => !BLOCKED_MODULES.has(k))
     .join(", ");
@@ -213,42 +219,50 @@ function formatError(err: unknown): string {
   return `${msg}${location}`;
 }
 
-// Buat sandboxed fs yang HANYA bisa akses tempDir
-// Semua operasi di luar tempDir akan diblokir
+// Create a sandboxed fs that can ONLY access tempDir
+// All operations outside tempDir are blocked
 function createSandboxedFs(allowedDir: string) {
   const realFs = require("fs") as typeof import("fs");
   const realFsp = require("fs/promises") as typeof import("fs/promises");
 
-  function assertSafe(targetPath: unknown) {
-    if (typeof targetPath !== "string") return;
-    const resolved = path.resolve(targetPath);
+  function resolveSafe(targetPath: unknown): string {
+    if (typeof targetPath !== "string") return targetPath as string;
+    // Resolve relative paths against allowedDir, not server cwd
+    // so fs.readFileSync('watermark.jpg') works correctly inside snippets
+    const resolved = path.isAbsolute(targetPath)
+      ? path.resolve(targetPath)
+      : path.resolve(allowedDir, targetPath);
     const allowedResolved = path.resolve(allowedDir);
     if (!resolved.startsWith(allowedResolved + path.sep) && resolved !== allowedResolved) {
       throw new Error(`Access denied: path '${targetPath}' is outside the allowed directory.`);
     }
+    return resolved;
   }
 
-  // Wrap semua method fs yang bisa baca/tulis file
+  // Keep assertSafe as a void-returning alias for backward compat in mkdir/readdir etc
+  const assertSafe = (p: unknown) => resolveSafe(p);
+
+  // Wrap all fs methods that can read/write files
   const sandboxFs = {
-    readFileSync: (p: any, opts?: any) => { assertSafe(p); return realFs.readFileSync(p, opts); },
-    writeFileSync: (p: any, data: any, opts?: any) => { assertSafe(p); return realFs.writeFileSync(p, data, opts as any); },
-    appendFileSync: (p: any, data: any, opts?: any) => { assertSafe(p); return realFs.appendFileSync(p, data, opts as any); },
-    existsSync: (p: any) => { assertSafe(p); return realFs.existsSync(p); },
-    mkdirSync: (p: any, opts?: any) => { assertSafe(p); return realFs.mkdirSync(p, opts); },
-    readdirSync: (p: any, opts?: any) => { assertSafe(p); return realFs.readdirSync(p, opts as any); },
-    statSync: (p: any, opts?: any) => { assertSafe(p); return realFs.statSync(p, opts as any); },
-    unlinkSync: (p: any) => { assertSafe(p); return realFs.unlinkSync(p); },
-    renameSync: (oldP: any, newP: any) => { assertSafe(oldP); assertSafe(newP); return realFs.renameSync(oldP, newP); },
-    copyFileSync: (src: any, dest: any, flags?: any) => { assertSafe(src); assertSafe(dest); return realFs.copyFileSync(src, dest, flags); },
-    createReadStream: (p: any, opts?: any) => { assertSafe(p); return realFs.createReadStream(p, opts); },
-    createWriteStream: (p: any, opts?: any) => { assertSafe(p); return realFs.createWriteStream(p, opts); },
-    readFile: (p: any, opts: any, cb?: any) => { assertSafe(p); return realFs.readFile(p, opts, cb); },
-    writeFile: (p: any, data: any, opts: any, cb?: any) => { assertSafe(p); return realFs.writeFile(p, data, opts, cb); },
-    unlink: (p: any, cb: any) => { assertSafe(p); return realFs.unlink(p, cb); },
-    mkdir: (p: any, opts: any, cb?: any) => { assertSafe(p); return realFs.mkdir(p, opts as any, cb as any); },
-    readdir: (p: any, opts: any, cb?: any) => { assertSafe(p); return realFs.readdir(p, opts as any, cb as any); },
-    stat: (p: any, cb: any) => { assertSafe(p); return realFs.stat(p, cb); },
-    // Blokir metode yang berpotensi berbahaya
+    readFileSync: (p: any, opts?: any) => { return realFs.readFileSync(resolveSafe(p), opts); },
+    writeFileSync: (p: any, data: any, opts?: any) => { return realFs.writeFileSync(resolveSafe(p), data, opts as any); },
+    appendFileSync: (p: any, data: any, opts?: any) => { return realFs.appendFileSync(resolveSafe(p), data, opts as any); },
+    existsSync: (p: any) => { return realFs.existsSync(resolveSafe(p)); },
+    mkdirSync: (p: any, opts?: any) => { return realFs.mkdirSync(resolveSafe(p), opts); },
+    readdirSync: (p: any, opts?: any) => { return realFs.readdirSync(resolveSafe(p), opts as any); },
+    statSync: (p: any, opts?: any) => { return realFs.statSync(resolveSafe(p), opts as any); },
+    unlinkSync: (p: any) => { return realFs.unlinkSync(resolveSafe(p)); },
+    renameSync: (oldP: any, newP: any) => { return realFs.renameSync(resolveSafe(oldP), resolveSafe(newP)); },
+    copyFileSync: (src: any, dest: any, flags?: any) => { return realFs.copyFileSync(resolveSafe(src), resolveSafe(dest), flags); },
+    createReadStream: (p: any, opts?: any) => { return realFs.createReadStream(resolveSafe(p), opts); },
+    createWriteStream: (p: any, opts?: any) => { return realFs.createWriteStream(resolveSafe(p), opts); },
+    readFile: (p: any, opts: any, cb?: any) => { return realFs.readFile(resolveSafe(p), opts, cb); },
+    writeFile: (p: any, data: any, opts: any, cb?: any) => { return realFs.writeFile(resolveSafe(p), data, opts, cb); },
+    unlink: (p: any, cb: any) => { return realFs.unlink(resolveSafe(p), cb); },
+    mkdir: (p: any, opts: any, cb?: any) => { return realFs.mkdir(resolveSafe(p), opts as any, cb as any); },
+    readdir: (p: any, opts: any, cb?: any) => { return realFs.readdir(resolveSafe(p), opts as any, cb as any); },
+    stat: (p: any, cb: any) => { return realFs.stat(resolveSafe(p), cb); },
+    // Block potentially dangerous methods
     realpathSync: () => { throw new Error("fs.realpathSync is not allowed in the sandbox."); },
     realpath: () => { throw new Error("fs.realpath is not allowed in the sandbox."); },
     symlinkSync: () => { throw new Error("fs.symlinkSync is not allowed in the sandbox."); },
@@ -259,15 +273,15 @@ function createSandboxedFs(allowedDir: string) {
     watchFile: () => { throw new Error("fs.watchFile is not allowed in the sandbox."); },
     constants: realFs.constants,
     promises: {
-      readFile: async (p: any, opts?: any) => { assertSafe(p); return realFsp.readFile(p, opts); },
-      writeFile: async (p: any, data: any, opts?: any) => { assertSafe(p); return realFsp.writeFile(p, data, opts as any); },
-      appendFile: async (p: any, data: any, opts?: any) => { assertSafe(p); return realFsp.appendFile(p, data, opts as any); },
-      unlink: async (p: any) => { assertSafe(p); return realFsp.unlink(p); },
-      mkdir: async (p: any, opts?: any) => { assertSafe(p); return realFsp.mkdir(p, opts); },
-      readdir: async (p: any, opts?: any) => { assertSafe(p); return realFsp.readdir(p, opts as any); },
-      stat: async (p: any, opts?: any) => { assertSafe(p); return realFsp.stat(p, opts as any); },
-      rename: async (oldP: any, newP: any) => { assertSafe(oldP); assertSafe(newP); return realFsp.rename(oldP, newP); },
-      copyFile: async (src: any, dest: any, flags?: any) => { assertSafe(src); assertSafe(dest); return realFsp.copyFile(src, dest, flags); },
+      readFile: async (p: any, opts?: any) => { return realFsp.readFile(resolveSafe(p), opts); },
+      writeFile: async (p: any, data: any, opts?: any) => { return realFsp.writeFile(resolveSafe(p), data, opts as any); },
+      appendFile: async (p: any, data: any, opts?: any) => { return realFsp.appendFile(resolveSafe(p), data, opts as any); },
+      unlink: async (p: any) => { return realFsp.unlink(resolveSafe(p)); },
+      mkdir: async (p: any, opts?: any) => { return realFsp.mkdir(resolveSafe(p), opts); },
+      readdir: async (p: any, opts?: any) => { return realFsp.readdir(resolveSafe(p), opts as any); },
+      stat: async (p: any, opts?: any) => { return realFsp.stat(resolveSafe(p), opts as any); },
+      rename: async (oldP: any, newP: any) => { return realFsp.rename(resolveSafe(oldP), resolveSafe(newP)); },
+      copyFile: async (src: any, dest: any, flags?: any) => { return realFsp.copyFile(resolveSafe(src), resolveSafe(dest), flags); },
     },
   };
 
@@ -283,9 +297,9 @@ export async function POST(req: NextRequest) {
 
     const encoder = new TextEncoder();
 
-    // Semua eksekusi berjalan di dalam ReadableStream start callback —
-    // ini pola yang benar untuk Next.js App Router streaming.
-    // Background IIFE tidak reliable karena serverless bisa kill context lebih awal.
+    // All execution runs inside the ReadableStream start callback —
+    // this is the correct pattern for Next.js App Router streaming.
+    // Background IIFEs are unreliable as serverless may kill the context early.
     const stream = new ReadableStream({
       async start(controller) {
         const sendEvent = (data: object) => {
@@ -296,17 +310,43 @@ export async function POST(req: NextRequest) {
 
         try {
           const tmpDir = os.tmpdir();
-          const tempDir = path.join(tmpDir, "temp");
+          const tempDir = path.join(tmpDir, "sandbox");
+          // Create common subdirs so snippets can use 'file.jpg', 'temp/file.jpg', or 'tmp/file.jpg'
+          const tempSubDirs = ["temp", "tmp"].map(d => path.join(tempDir, d));
           if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+          for (const d of tempSubDirs) {
+            if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
+          }
 
           if (snippetId) {
             try {
-              const attachments = await prisma.snippetFile.findMany({
-                where: { snippetId },
-                include: { globalFile: { select: { name: true, data: true } } },
-              });
-              for (const a of attachments) {
-                fs.writeFileSync(path.join(tempDir, path.basename(a.globalFile.name)), a.globalFile.data);
+              // snippetId may be a Prisma id or a filename — resolve to the real Prisma id first
+              // so the Redis key snippet:files:{id} is always consistent
+              let resolvedSnippetId = snippetId;
+              const byId = await prisma.snippet.findUnique({ where: { id: snippetId }, select: { id: true } });
+              if (!byId) {
+                const byFilename = await prisma.snippet.findUnique({ where: { filename: snippetId }, select: { id: true } });
+                if (byFilename) resolvedSnippetId = byFilename.id;
+              }
+
+              const fileIds = await redis.get<string[]>(`snippet:files:${resolvedSnippetId}`);
+              if (Array.isArray(fileIds) && fileIds.length > 0) {
+                for (const fileId of fileIds) {
+                  const [meta, b64] = await Promise.all([
+                    redis.get<{ name: string }>(`file:meta:${fileId}`),
+                    redis.get<string>(`file:data:${fileId}`),
+                  ]);
+                  if (meta && b64) {
+                    const fileBuffer = Buffer.from(b64, "base64");
+                    const fileName = path.basename(meta.name);
+                    // Write to tempDir root and all common subdirs (temp/, tmp/)
+                    // so snippets work regardless of which path they use
+                    fs.writeFileSync(path.join(tempDir, fileName), fileBuffer);
+                    for (const d of tempSubDirs) {
+                      fs.writeFileSync(path.join(d, fileName), fileBuffer);
+                    }
+                  }
+                }
               }
             } catch (e) {
               console.warn("Warning: failed to load snippet attachments:", e);
@@ -316,7 +356,12 @@ export async function POST(req: NextRequest) {
           if (Array.isArray(files) && files.length > 0) {
             for (const f of files as { name: string; data: string }[]) {
               if (!f.name || !f.data) continue;
-              fs.writeFileSync(path.join(tempDir, path.basename(f.name)), Buffer.from(f.data, "base64"));
+              const inlineBuf = Buffer.from(f.data, "base64");
+              const inlineName = path.basename(f.name);
+              fs.writeFileSync(path.join(tempDir, inlineName), inlineBuf);
+              for (const d of tempSubDirs) {
+                fs.writeFileSync(path.join(d, inlineName), inlineBuf);
+              }
             }
           }
 
@@ -380,9 +425,9 @@ export async function POST(req: NextRequest) {
             TZ: process.env.TZ,
           };
 
-          // ── SSRF guard ─────────────────────────────────────────────────────────
-          // Didefinisikan di luar sandbox object agar tidak merusak syntax object literal.
-          // Memblokir fetch() ke IP internal/metadata sebelum request keluar ke jaringan.
+          // ── SSRF guard ──────────────────────────────────────────────────────────
+          // Defined outside the sandbox object to avoid breaking object literal syntax.
+          // Blocks fetch() to internal/metadata IPs before the request leaves the network.
           const isBlockedUrl = (input: unknown): boolean => {
             try {
               const url = new URL(String(input));
@@ -428,10 +473,10 @@ export async function POST(req: NextRequest) {
               if (isBlockedUrl(input)) {
                 throw new Error("fetch blocked: requests to internal/metadata addresses are not allowed.");
               }
-              // Native ReadableStream dari host context tidak bisa di-iterate
-              // dari dalam VM sandbox (cross-context boundary).
-              // Solusi: pipe lewat TransformStream baru yang dibuat di context yang sama
-              // dengan sandbox, sehingga res.body bisa dipakai normal (for await, getReader, dll)
+              // Native ReadableStream from the host context cannot be iterated
+              // from inside the VM sandbox (cross-context boundary).
+              // Fix: pipe through a new TransformStream created in the same context
+              // as the sandbox, so res.body works normally (for await, getReader, etc.)
               const nativeRes = await globalThis.fetch(input, init);
               const { readable, writable } = new TransformStream();
               const writer = writable.getWriter();
@@ -471,7 +516,7 @@ export async function POST(req: NextRequest) {
             __filename: path.join(tempDir, "snippet.js"),
             __tmpdir: tempDir,
             __tempdir: tempDir,
-            // Blokir eval dan Function constructor — vektor utama escape sandbox
+            // Block eval and Function constructor — primary sandbox escape vectors
             eval: undefined,
             Function: undefined,
           };
@@ -541,7 +586,7 @@ ${processedCode}
               ]);
             }
 
-            // Tunggu sebentar untuk async ops yang masih jalan (setTimeout, dll)
+            // Wait briefly for any still-running async ops (setTimeout, etc.)
             let lastCount = logs.length + errors.length;
             let stableRounds = 0;
             while (Date.now() < deadline) {

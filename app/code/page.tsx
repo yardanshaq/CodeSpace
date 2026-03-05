@@ -8,13 +8,6 @@ const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://codespace.yardansh
 
 const include = {
   admin: { select: { username: true } },
-  attachments: {
-    include: {
-      globalFile: {
-        select: { id: true, name: true, mimeType: true, size: true },
-      },
-    },
-  },
 };
 
 export async function generateMetadata({
@@ -37,7 +30,7 @@ export async function generateMetadata({
       },
     });
 
-    // Jangan bocorkan info snippet private di OG metadata
+    // Don't leak private snippet info in OG metadata
     if (!snippet || !snippet.isPublic) return { title: "CodeSpace", description: "a place to share simple snippets" };
 
     const desc = `${snippet.category} snippet by ${snippet.admin.username} — ${snippet.filename}`;
@@ -79,17 +72,17 @@ export default async function CodePage({
     getSession(),
   ]);
 
-  // Private snippet: hanya owner atau SUPERADMIN yang boleh lihat
-  // Selain itu → tampilkan "SNIPPET NOT FOUND", bukan redirect ke login
+  // Private snippet: only owner or SUPERADMIN can view
+  // Otherwise → show "SNIPPET NOT FOUND", not redirect to login
   let initialData = null;
   if (snippet) {
     if (snippet.isPublic) {
-      initialData = { ...snippet, attachments: snippet.attachments.map((a) => a.globalFile) };
+      initialData = { ...snippet, attachments: [] };
     } else {
       const isOwner = session?.id === snippet.adminId;
       const isSuperAdmin = session?.role === "SUPERADMIN";
       if (isOwner || isSuperAdmin) {
-        initialData = { ...snippet, attachments: snippet.attachments.map((a) => a.globalFile) };
+        initialData = { ...snippet, attachments: [] };
       }
     }
   }

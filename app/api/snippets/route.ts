@@ -4,7 +4,7 @@ import { getSession } from "@/lib/auth";
 import { redis } from "@/lib/redis";
 
 
-// Rate limit post snippet — maksimal 10 snippet per IP per jam
+// Rate limit for snippet creation — max 10 snippets per IP per hour
 async function checkSnippetRateLimit(ip: string): Promise<{ allowed: boolean; retryAfter: number }> {
   const key = `ratelimit:post-snippet:${ip}`;
   try {
@@ -27,6 +27,19 @@ function getRealIp(req: NextRequest): string {
     req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     "unknown"
   );
+}
+
+async function getSnippetFiles(snippetId: string) {
+  try {
+    const ids = await redis.get<string[]>(`snippet:files:${snippetId}`);
+    if (!Array.isArray(ids) || ids.length === 0) return [];
+    const metas = await Promise.all(
+      ids.map(id => redis.get<{ id: string; name: string; mimeType: string; size: number; uploadedBy: string; createdAt: string }>(`file:meta:${id}`))
+    );
+    return metas.filter(Boolean);
+  } catch {
+    return [];
+  }
 }
 
 export const dynamic = "force-dynamic";
@@ -75,23 +88,18 @@ export async function GET(req: NextRequest) {
       where,
       include: {
         admin: { select: { username: true } },
-        attachments: {
-          include: {
-            globalFile: {
-              select: { id: true, name: true, mimeType: true, size: true },
-            },
-          },
-        },
       },
       orderBy: { createdAt: "desc" },
     });
 
-    return NextResponse.json(
-      snippets.map((s) => ({
+    const snippetsWithFiles = await Promise.all(
+      snippets.map(async (s) => ({
         ...s,
-        attachments: s.attachments.map((a) => a.globalFile),
+        attachments: await getSnippetFiles(s.id),
       }))
     );
+
+    return NextResponse.json(snippetsWithFiles);
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
@@ -146,18 +154,11 @@ export async function POST(req: NextRequest) {
       },
       include: {
         admin: { select: { username: true } },
-        attachments: {
-          include: {
-            globalFile: {
-              select: { id: true, name: true, mimeType: true, size: true },
-            },
-          },
-        },
       },
     });
 
     return NextResponse.json(
-      { ...snippet, attachments: snippet.attachments.map((a) => a.globalFile) },
+      { ...snippet, attachments: [] },
       { status: 201 }
     );
   } catch (error) {

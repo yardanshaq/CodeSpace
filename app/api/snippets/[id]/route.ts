@@ -1,7 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { redis } from "@/lib/redis";
 export const dynamic = "force-dynamic";
+
+async function getSnippetFiles(snippetId: string) {
+  try {
+    const ids = await redis.get<string[]>(`snippet:files:${snippetId}`);
+    if (!Array.isArray(ids) || ids.length === 0) return [];
+    const metas = await Promise.all(
+      ids.map(id => redis.get<{ id: string; name: string; mimeType: string; size: number; uploadedBy: string; createdAt: string }>(`file:meta:${id}`))
+    );
+    return metas.filter(Boolean);
+  } catch {
+    return [];
+  }
+}
 
 async function findSnippet(idOrFilename: string) {
   return (
@@ -11,16 +25,7 @@ async function findSnippet(idOrFilename: string) {
 }
 
 async function findSnippetWithRelations(idOrFilename: string) {
-  const include = {
-    admin: { select: { username: true } },
-    attachments: {
-      include: {
-        globalFile: {
-          select: { id: true, name: true, mimeType: true, size: true },
-        },
-      },
-    },
-  };
+  const include = { admin: { select: { username: true } } };
   return (
     (await prisma.snippet.findUnique({ where: { id: idOrFilename }, include })) ??
     (await prisma.snippet.findUnique({ where: { filename: idOrFilename }, include }))
@@ -46,7 +51,7 @@ export async function GET(
     }
     return NextResponse.json({
       ...snippet,
-      attachments: snippet.attachments.map((a) => a.globalFile),
+      attachments: await getSnippetFiles(snippet.id),
     });
   } catch (error) {
     console.error(error);
@@ -120,20 +125,11 @@ export async function PUT(
         category: category ?? snippet.category,
         isPublic: isPublic !== undefined ? isPublic : snippet.isPublic,
       },
-      include: {
-        admin: { select: { username: true } },
-        attachments: {
-          include: {
-            globalFile: {
-              select: { id: true, name: true, mimeType: true, size: true },
-            },
-          },
-        },
-      },
+      include: { admin: { select: { username: true } } },
     });
     return NextResponse.json({
       ...updated,
-      attachments: updated.attachments.map((a) => a.globalFile),
+      attachments: await getSnippetFiles(updated.id),
     });
   } catch (error) {
     console.error(error);
@@ -157,6 +153,18 @@ export async function DELETE(
     if (session.role !== "SUPERADMIN" && snippet.adminId !== session.id) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+    // Delete Redis files associated with this snippet
+    try {
+      const fileIds = await redis.get<string[]>(`snippet:files:${snippet.id}`);
+      if (Array.isArray(fileIds) && fileIds.length > 0) {
+        await Promise.all(fileIds.flatMap(id => [
+          redis.del(`file:meta:${id}`),
+          redis.del(`file:data:${id}`),
+        ]));
+        await redis.del(`snippet:files:${snippet.id}`);
+      }
+    } catch { /* non-fatal */ }
+
     await prisma.snippet.delete({ where: { id: snippet.id } });
     return NextResponse.json({ success: true });
   } catch (error) {

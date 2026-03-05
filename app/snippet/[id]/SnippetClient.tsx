@@ -119,10 +119,11 @@ const FETCH_TIMEOUT_MS = 10_000;
 export default function SnippetClient({ id, initialData }: { id: string; initialData?: Snippet | null }) {
   const router = useRouter();
 
-  // initialData dari server — kalau ada, langsung render tanpa loading screen
+  // initialData from server — if present, render immediately without a loading screen
   const [snippet, setSnippet] = useState<Snippet | null>(initialData ?? null);
   const [loading, setLoading] = useState(!initialData);
   const [copied, setCopied] = useState(false);
+  const [attachments, setAttachments] = useState<GlobalFile[]>(initialData?.attachments ?? []);
 
   const [showRunModal, setShowRunModal] = useState(false);
   const [runOutput, setRunOutput] = useState("");
@@ -137,12 +138,12 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
   const hasTracked = useRef(false);
   const loadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const outputRef = useRef<HTMLDivElement | null>(null);
-  // Smart scroll: hanya scroll kalau output datang sedikit-sedikit (streaming lambat)
-  // Output instant/besar sekaligus tidak di-scroll supaya user bisa baca dari atas
+  // Smart scroll: only auto-scroll when output trickles in (slow streaming)
+  // Large instant dumps are not scrolled so the user can read from the top
   const userScrolledUp = useRef(false);
   const prevOutputLen = useRef(0);
 
-  // Lock body scroll when run modal is open
+  // Lock body scroll while run modal is open
   useEffect(() => {
     if (showRunModal) {
       const prev = document.body.style.overflow;
@@ -169,7 +170,7 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
     if (!el || userScrolledUp.current) return;
     const delta = runOutput.length - prevOutputLen.current;
     prevOutputLen.current = runOutput.length;
-    // Hanya scroll kalau delta kecil (streaming) — bukan dump besar sekaligus
+    // Only scroll for small deltas (streaming) — skip large instant dumps
     if (delta > 0 && delta < 300) {
       el.scrollTop = el.scrollHeight;
     }
@@ -181,18 +182,18 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
       try {
-        // cache: "no-store" supaya polling selalu dapat data terbaru, tidak kena browser cache
+        // cache: "no-store" so polling always gets fresh data, bypassing browser cache
         const r = await fetch(`/api/snippets/${id}`, { signal: controller.signal, cache: "no-store" });
         clearTimeout(timeoutId);
         if (!r.ok) { if (!silent) setLoading(false); return; }
         const data: Snippet = await r.json();
         if (silent) {
           if (!lastUpdatedAt.current || data.updatedAt !== lastUpdatedAt.current) {
-            // Ada perubahan konten snippet — update semua
+            // Snippet content changed — update everything
             setSnippet(data);
             lastUpdatedAt.current = data.updatedAt;
           } else {
-            // Konten tidak berubah tapi views bisa bertambah — update views saja
+            // Content unchanged but views may have incremented — update views only
             setSnippet(prev => prev ? { ...prev, views: data.views } : prev);
           }
         } else {
@@ -208,13 +209,27 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
     [id]
   );
 
+  // Fetch attachments from Redis via API — separate from snippet data
+  const fetchAttachments = useCallback(async () => {
+    if (!id) return;
+    try {
+      const r = await fetch(`/api/snippets/${id}/files`, { cache: "no-store" });
+      if (!r.ok) return;
+      const data: GlobalFile[] = await r.json();
+      setAttachments(data);
+    } catch { /* silent */ }
+  }, [id]);
+
   useEffect(() => {
     if (!id || hasTracked.current) return;
     hasTracked.current = true;
 
-    // Kalau sudah ada initialData dari server, skip fetch pertama
-    // Hanya track view dan mulai polling untuk update
+    // If initialData is already available from server, skip initial fetch
+    // Only track view and start polling for updates
     if (!initialData) fetchSnippet(false);
+
+    // Fetch file attachments from Redis regardless of whether initialData is present
+    fetchAttachments();
 
     // Tentukan apakah view perlu di-track SEBELUM fetch snippet
     // sehingga GET dan PATCH bisa jalan PARALLEL
@@ -238,7 +253,7 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
       shouldTrackView = true;
     }
 
-    // Jalankan PATCH views — fetch snippet sudah dihandle di atas
+    // Run PATCH views — snippet fetch is already handled above
     if (shouldTrackView) {
       fetch(`/api/snippets/${id}`, { method: "PATCH" })
         .then(r => r.json())
@@ -251,7 +266,7 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
         .catch(() => {});
     }
 
-    // Set lastUpdatedAt dari initialData supaya polling deteksi perubahan dengan benar
+    // Set lastUpdatedAt from initialData so polling can detect changes correctly
     if (initialData && !lastUpdatedAt.current) {
       lastUpdatedAt.current = initialData.updatedAt;
     }
@@ -261,7 +276,7 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
       if (pollRef.current) clearInterval(pollRef.current);
       if (loadingTimerRef.current) clearTimeout(loadingTimerRef.current);
     };
-  }, [fetchSnippet, id]);
+  }, [fetchSnippet, fetchAttachments, id]);
 
   const handleCopy = () => {
     if (!snippet) return;
@@ -464,35 +479,40 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
           </div>
         </div>
 
-        {snippet.attachments.length > 0 && (
+        {attachments.length > 0 && (
           <div style={{ marginTop: 24 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: "var(--text-muted)" }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/>
+                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
               </svg>
               Source Files
               <span style={{ background: "var(--text)", color: "var(--surface)", borderRadius: 4, padding: "1px 7px", fontSize: 10 }}>
-                {snippet.attachments.length}
+                {attachments.length}
               </span>
             </div>
-            <div style={{ border: "2.5px solid var(--border-color)", borderRadius: 10, overflow: "hidden", boxShadow: "4px 4px 0 var(--border-color)", background: "var(--surface)" }}>
-              {snippet.attachments.map((f, i) => (
-                <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderBottom: i < snippet.attachments.length - 1 ? `1.5px solid var(--divider)` : "none" }}>
-                  <div style={{ width: 44, height: 44, borderRadius: 6, border: "2px solid var(--border-color)", overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--surface2)", fontSize: 20 }}>
-                    {f.mimeType.startsWith("image/") ? (
-                      <img src={`/api/admin/files/${f.id}`} alt={f.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    ) : fileEmoji(f.mimeType)}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)" }}>
+            <div style={{ border: "2.5px solid var(--border-color)", borderRadius: 10, padding: 16, boxShadow: "4px 4px 0 var(--border-color)", background: "var(--surface)" }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
+                {attachments.map((f) => (
+                  <div key={f.id} style={{ width: 200, border: "2px solid var(--border-color)", borderRadius: 8, overflow: "hidden", background: "var(--surface2)", flexShrink: 0 }}>
+                    <div
+                      style={{ width: "100%", height: 160, background: "var(--code-bg)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", borderBottom: "1.5px solid var(--border-color)", cursor: f.mimeType.startsWith("image/") ? "pointer" : "default" }}
+                      onClick={() => f.mimeType.startsWith("image/") && window.open(`/api/files/${f.id}`, "_blank")}
+                    >
+                      {f.mimeType.startsWith("image/") ? (
+                        <img src={`/api/files/${f.id}`} alt={f.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      ) : (
+                        <div style={{ fontSize: 48, userSelect: "none" }}>{fileEmoji(f.mimeType)}</div>
+                      )}
+                    </div>
+                    <div style={{ padding: "8px 10px 4px", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {f.name}
                     </div>
-                    <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
-                      {f.mimeType} · {formatBytes(f.size)}
+                    <div style={{ padding: "0 10px 10px", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-muted)" }}>
+                      {formatBytes(f.size)}
                     </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           </div>
         )}

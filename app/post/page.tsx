@@ -12,6 +12,14 @@ interface User {
   role: "SUPERADMIN" | "ADMIN" | "MEMBER";
 }
 
+interface SnippetFile {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  uploadedBy?: string;
+}
+
 interface Snippet {
   id: string;
   title: string;
@@ -21,10 +29,27 @@ interface Snippet {
   isPublic: boolean;
   views: number;
   admin: { username: string };
-  attachments: { id: string; name: string; mimeType: string; size: number }[];
+  attachments: SnippetFile[];
   createdAt: string;
   updatedAt: string;
 }
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function fileEmoji(mimeType: string): string {
+  if (mimeType.startsWith("image/")) return "🖼️";
+  if (mimeType.startsWith("video/")) return "🎬";
+  if (mimeType.startsWith("audio/")) return "🎵";
+  if (mimeType.startsWith("text/")) return "📄";
+  if (mimeType.includes("json")) return "📋";
+  if (mimeType.includes("pdf")) return "📕";
+  return "📦";
+}
+
 
 const CATEGORIES = ["AI", "Anime", "Converter", "Downloader", "Generator", "Other", "Random", "Scrape", "Search", "Tools", "Translate", "Uploader"];
 
@@ -61,6 +86,12 @@ export default function PostPage() {
   const [regError, setRegError] = useState("");
   const [regSuccess, setRegSuccess] = useState("");
   const [regLoading, setRegLoading] = useState(false);
+
+  // File attachment state (for edit modal)
+  const [editFiles, setEditFiles] = useState<SnippetFile[]>([]);
+  const [fileUploading, setFileUploading] = useState(false);
+  const [fileError, setFileError] = useState("");
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const outputRef = useRef<HTMLDivElement | null>(null);
 
@@ -132,7 +163,7 @@ export default function PostPage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [showCreateModal, showEditModal, form, editSnippet]);
 
-  // Lock body scroll when run modal is open
+  // Lock body scroll while run modal is visible
   useEffect(() => {
     if (showRunModal) {
       const prev = document.body.style.overflow;
@@ -141,8 +172,8 @@ export default function PostPage() {
     }
   }, [showRunModal]);
 
-  // Smart scroll: hanya scroll kalau output datang sedikit-sedikit (streaming lambat)
-  // Output instant/besar sekaligus tidak di-scroll supaya user bisa baca dari atas
+  // Smart scroll: only auto-scroll when output arrives incrementally (slow streaming)
+  // Large instant dumps are not scrolled so user can read from the top
   const userScrolledUp = useRef(false);
   const prevOutputLen = useRef(0);
 
@@ -164,7 +195,7 @@ export default function PostPage() {
     if (!el || userScrolledUp.current) return;
     const delta = runOutput.length - prevOutputLen.current;
     prevOutputLen.current = runOutput.length;
-    // Hanya scroll kalau delta kecil (streaming) — bukan dump besar sekaligus
+    // Only scroll for small deltas (streaming) — not for large instant dumps
     if (delta > 0 && delta < 300) {
       el.scrollTop = el.scrollHeight;
     }
@@ -219,7 +250,55 @@ export default function PostPage() {
   const openEdit = (s: Snippet) => {
     setEditSnippet(s);
     setForm({ title: s.title, code: s.code, category: s.category, isPublic: s.isPublic });
-    setFormError(""); setFormSuccess(""); setShowEditModal(true);
+    setFormError(""); setFormSuccess("");
+    setEditFiles(s.attachments ?? []);
+    setFileError("");
+    setShowEditModal(true);
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!editSnippet) return;
+    const file = e.target.files?.[0];
+    if (!e.target.files) return;
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (!file) return;
+
+    const MAX = 10 * 1024 * 1024;
+    if (file.size > MAX) { setFileError("File too large. Maximum 10 MB."); return; }
+
+    setFileUploading(true); setFileError("");
+    const fd = new FormData();
+    fd.append("file", file);
+
+    const res = await fetch(`/api/snippets/${editSnippet.id}/files`, { method: "POST", body: fd });
+    const data = await res.json();
+    if (res.ok) {
+      setEditFiles(prev => {
+        // Replace if name matches (upsert), otherwise append
+        const exists = prev.findIndex(f => f.name === data.name);
+        if (exists >= 0) { const next = [...prev]; next[exists] = data; return next; }
+        return [...prev, data];
+      });
+    } else {
+      setFileError(data.error || "Gagal upload file");
+    }
+    setFileUploading(false);
+  };
+
+  const handleFileDelete = async (fileId: string) => {
+    if (!editSnippet) return;
+    if (!confirm("Delete this file?")) return;
+    const res = await fetch(`/api/snippets/${editSnippet.id}/files`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fileId }),
+    });
+    if (res.ok) {
+      setEditFiles(prev => prev.filter(f => f.id !== fileId));
+    } else {
+      const data = await res.json();
+      setFileError(data.error || "Gagal hapus file");
+    }
   };
 
   const handleRegister = async () => {
@@ -444,6 +523,119 @@ export default function PostPage() {
                 )}
               </div>
               <textarea className="textarea-field" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} />
+
+              {/* ── FILE ATTACHMENT SECTION ── */}
+              <div style={{ borderTop: "1.5px solid var(--divider)", paddingTop: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                  <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 6 }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                    </svg>
+                    SOURCE FILES
+                    {editFiles.length > 0 && (
+                      <span style={{ background: "var(--text)", color: "var(--surface)", borderRadius: 4, padding: "1px 6px", fontSize: 10 }}>
+                        {editFiles.length}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    className="btn btn-teal"
+                    style={{ fontSize: 10, padding: "5px 12px", gap: 5 }}
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={fileUploading}
+                  >
+                    {fileUploading ? (
+                      <>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: "spin 1s linear infinite" }}>
+                          <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                        </svg>
+                        UPLOADING...
+                      </>
+                    ) : (
+                      <>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+                        </svg>
+                        UPLOAD FILE
+                      </>
+                    )}
+                  </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    style={{ display: "none" }}
+                    onChange={handleFileUpload}
+                  />
+                </div>
+
+                {fileError && (
+                  <div className="alert alert-error" style={{ marginBottom: 8, fontSize: 11 }}>{fileError}</div>
+                )}
+
+                {editFiles.length === 0 ? (
+                  <div style={{
+                    border: "1.5px dashed var(--border-color)", borderRadius: 8,
+                    padding: "20px 16px", textAlign: "center",
+                    fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-muted)",
+                    cursor: "pointer"
+                  }} onClick={() => fileInputRef.current?.click()}>
+                    Click or drag & drop a file here<br/>
+                    <span style={{ fontSize: 10, opacity: 0.6 }}>Max. 10 MB per file</span>
+                  </div>
+                ) : (
+                  <div style={{ border: "1.5px solid var(--border-color)", borderRadius: 8, overflow: "hidden" }}>
+                    {editFiles.map((f, i) => (
+                      <div key={f.id} style={{
+                        display: "flex", alignItems: "center", gap: 10, padding: "10px 12px",
+                        borderBottom: i < editFiles.length - 1 ? "1px solid var(--divider)" : "none",
+                        background: "var(--surface)"
+                      }}>
+                        {/* Preview / icon */}
+                        <div style={{ width: 36, height: 36, borderRadius: 6, border: "1.5px solid var(--border-color)", overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--surface2)", fontSize: 16 }}>
+                          {f.mimeType.startsWith("image/") ? (
+                            <img src={`/api/files/${f.id}`} alt={f.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          ) : fileEmoji(f.mimeType)}
+                        </div>
+                        {/* Info */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)" }}>
+                            {f.name}
+                          </div>
+                          <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
+                            {formatBytes(f.size)}
+                          </div>
+                        </div>
+                        {/* Actions */}
+                        <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                          {f.mimeType.startsWith("image/") && (
+                            <a href={`/api/files/${f.id}`} target="_blank" rel="noopener noreferrer"
+                              title="View full"
+                              style={{ width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "1.5px solid var(--border-color)", borderRadius: 6, cursor: "pointer", color: "var(--text-muted)", textDecoration: "none", flexShrink: 0, transition: "border-color 0.15s, color 0.15s" }}
+                              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = "var(--text)"; (e.currentTarget as HTMLElement).style.color = "var(--text)"; }}
+                              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "var(--border-color)"; (e.currentTarget as HTMLElement).style.color = "var(--text-muted)"; }}
+                            >
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+                              </svg>
+                            </a>
+                          )}
+                          <button
+                            onClick={() => handleFileDelete(f.id)}
+                            title="Delete file"
+                            style={{ width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "1.5px solid var(--border-color)", borderRadius: 6, cursor: "pointer", color: "var(--text-muted)", flexShrink: 0, transition: "border-color 0.15s, color 0.15s, background 0.15s" }}
+                            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = "var(--red)"; (e.currentTarget as HTMLElement).style.color = "var(--red)"; (e.currentTarget as HTMLElement).style.background = "rgba(239,68,68,0.08)"; }}
+                            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "var(--border-color)"; (e.currentTarget as HTMLElement).style.color = "var(--text-muted)"; (e.currentTarget as HTMLElement).style.background = "none"; }}
+                          >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
             <div className="modal-footer">
               <button className="btn btn-white" onClick={() => setShowEditModal(false)}>CANCEL</button>
@@ -516,6 +708,10 @@ export default function PostPage() {
         @keyframes blink {
           0%, 100% { opacity: 1; }
           50% { opacity: 0; }
+        }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
         }
       `}</style>
     </>
