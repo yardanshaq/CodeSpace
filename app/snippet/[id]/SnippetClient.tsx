@@ -505,16 +505,10 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
                     borderRadius: 8, overflow: "hidden",
                     background: "var(--surface2)",
                     cursor: f.mimeType.startsWith("image/") ? "zoom-in" : "default",
-                    transition: "border-color 0.15s, transform 0.15s",
+                    transition: "border-color 0.15s",
                   }}
-                  onMouseEnter={e => {
-                    (e.currentTarget as HTMLElement).style.borderColor = "var(--text)";
-                    if (f.mimeType.startsWith("image/")) (e.currentTarget as HTMLElement).style.transform = "scale(1.03)";
-                  }}
-                  onMouseLeave={e => {
-                    (e.currentTarget as HTMLElement).style.borderColor = "var(--border-color)";
-                    (e.currentTarget as HTMLElement).style.transform = "scale(1)";
-                  }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = "var(--text)"; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "var(--border-color)"; }}
                 >
                   <div style={{ width: "100%", aspectRatio: "1", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--code-bg)", overflow: "hidden" }}>
                     {f.mimeType.startsWith("image/") ? (
@@ -545,11 +539,11 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
               backdropFilter: "blur(4px)",
             }}
           >
-            <div onClick={e => e.stopPropagation()} style={{ position: "relative", maxWidth: "90vw", maxHeight: "90vh", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+            <div onClick={e => e.stopPropagation()} style={{ position: "relative", maxWidth: "min(520px, 90vw)", display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
               <img
                 src={`/api/files/${previewFile.id}`}
                 alt={previewFile.name}
-                style={{ maxWidth: "90vw", maxHeight: "80vh", objectFit: "contain", borderRadius: 8, boxShadow: "0 8px 48px rgba(0,0,0,0.6)" }}
+                style={{ maxWidth: "min(500px, 80vw)", maxHeight: "55vh", objectFit: "contain", borderRadius: 8, boxShadow: "0 8px 40px rgba(0,0,0,0.5)" }}
               />
               <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "rgba(255,255,255,0.6)", display: "flex", alignItems: "center", gap: 10 }}>
                 <span>{previewFile.name}</span>

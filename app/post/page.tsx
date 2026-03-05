@@ -103,12 +103,15 @@ export default function PostPage() {
   // File attachment state (for edit modal)
   const [editFiles, setEditFiles] = useState<SnippetFile[]>([]);
   const [fileUploading, setFileUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0); // 0-100
   const [fileError, setFileError] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // File attachment state (for create modal — stored locally until snippet is saved)
   const [createPendingFiles, setCreatePendingFiles] = useState<{ file: File; id: string }[]>([]);
   const [createFileError, setCreateFileError] = useState("");
+  const [createUploadProgress, setCreateUploadProgress] = useState<{ current: number; total: number; pct: number } | null>(null);
+  const [createUploadError, setCreateUploadError] = useState("");
   const createFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const outputRef = useRef<HTMLDivElement | null>(null);
@@ -232,30 +235,75 @@ export default function PostPage() {
 
   const handleCreateSnippet = async () => {
     if (!form.title || !form.code) { setFormError("Title and code are required"); return; }
-    setFormLoading(true); setFormError("");
-    const res = await fetch("/api/snippets", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...form, isPublic: isMember ? true : form.isPublic }),
-    });
-    const data = await res.json();
-    if (res.ok) {
-      // Upload any pending files after snippet is created
-      if (createPendingFiles.length > 0) {
-        for (const { file } of createPendingFiles) {
+
+    setFormLoading(true); setFormError(""); setCreateUploadError(""); setCreateUploadProgress(null);
+
+    // Phase 1: save snippet metadata
+    let snippetId: string | null = null;
+    try {
+      const res = await fetch("/api/snippets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...form, isPublic: isMember ? true : form.isPublic }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setFormError(data.error || "Failed to create"); setFormLoading(false); return; }
+      snippetId = data.id;
+    } catch { setFormError("Network error, please try again"); setFormLoading(false); return; }
+
+    // Phase 2: upload pending files one by one with XHR progress
+    // formLoading stays TRUE so the UI stays in "busy" state — only createUploadProgress changes
+    if (createPendingFiles.length > 0 && snippetId) {
+      const total = createPendingFiles.length;
+      const errors: string[] = [];
+
+      for (let i = 0; i < total; i++) {
+        const { file } = createPendingFiles[i];
+        // Setting createUploadProgress triggers "UPLOADING N/M..." UI in the footer
+        setCreateUploadProgress({ current: i + 1, total, pct: 0 });
+
+        const result = await new Promise<{ ok: boolean; error?: string }>((resolve) => {
           const fd = new FormData();
           fd.append("file", file);
-          await fetch(`/api/snippets/${data.id}/files`, { method: "POST", body: fd });
-        }
-        setCreatePendingFiles([]);
+          const xhr = new XMLHttpRequest();
+          xhr.open("POST", `/api/snippets/${snippetId}/files`);
+          xhr.upload.onprogress = (ev) => {
+            if (ev.lengthComputable) {
+              setCreateUploadProgress({ current: i + 1, total, pct: Math.round((ev.loaded / ev.total) * 100) });
+            }
+          };
+          xhr.onload = () => {
+            if (xhr.status === 413) { resolve({ ok: false, error: "File too large for server (max ~4 MB on this plan)" }); return; }
+            try {
+              const body = JSON.parse(xhr.responseText);
+              resolve(xhr.status >= 200 && xhr.status < 300 ? { ok: true } : { ok: false, error: body.error || `Upload failed (${xhr.status})` });
+            } catch { resolve({ ok: false, error: `Upload failed (${xhr.status})` }); }
+          };
+          xhr.onerror = () => resolve({ ok: false, error: "Network error" });
+          xhr.send(fd);
+        });
+
+        if (!result.ok) errors.push(`"${file.name}": ${result.error}`);
       }
-      setFormSuccess("Snippet created!");
-      setForm({ title: "", code: "", category: "Scrape", isPublic: true });
-      setTimeout(() => { setShowCreateModal(false); setFormSuccess(""); fetchSnippets(true); }, 800);
+
+      setCreateUploadProgress(null);
+      setCreatePendingFiles([]);
+      setFormLoading(false);
+
+      if (errors.length > 0) {
+        setCreateUploadError(errors.join(" · "));
+        // Snippet was still created — show partial success
+        setFormSuccess("Snippet created! Some files failed to upload.");
+        setTimeout(() => { setShowCreateModal(false); setFormSuccess(""); fetchSnippets(true); }, 2500);
+        return;
+      }
     } else {
-      setFormError(data.error || "Failed to create");
+      setFormLoading(false);
     }
-    setFormLoading(false);
+
+    setFormSuccess("Snippet created!");
+    setForm({ title: "", code: "", category: "Scrape", isPublic: true });
+    setTimeout(() => { setShowCreateModal(false); setFormSuccess(""); fetchSnippets(true); }, 800);
   };
 
   const handleEditSnippet = async () => {
@@ -301,8 +349,8 @@ export default function PostPage() {
     const file = e.target.files?.[0];
     if (createFileInputRef.current) createFileInputRef.current.value = "";
     if (!file) return;
-    const MAX = 10 * 1024 * 1024;
-    if (file.size > MAX) { setCreateFileError("File too large. Maximum 10 MB."); return; }
+    const MAX = 4 * 1024 * 1024;
+    if (file.size > MAX) { setCreateFileError("File too large. Maximum 4 MB per file."); return; }
     setCreateFileError("");
     const id = Math.random().toString(36).slice(2);
     setCreatePendingFiles(prev => {
@@ -317,33 +365,50 @@ export default function PostPage() {
     setCreatePendingFiles(prev => prev.filter(f => f.id !== id));
   };
 
-    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!editSnippet) return;
     const file = e.target.files?.[0];
-    if (!e.target.files) return;
     if (fileInputRef.current) fileInputRef.current.value = "";
     if (!file) return;
 
-    const MAX = 10 * 1024 * 1024;
-    if (file.size > MAX) { setFileError("File too large. Maximum 10 MB."); return; }
+    const MAX = 4 * 1024 * 1024;
+    if (file.size > MAX) { setFileError("File too large. Maximum 4 MB per file."); return; }
 
-    setFileUploading(true); setFileError("");
+    setFileUploading(true); setUploadProgress(0); setFileError("");
     const fd = new FormData();
     fd.append("file", file);
 
-    const res = await fetch(`/api/snippets/${editSnippet.id}/files`, { method: "POST", body: fd });
-    const data = await res.json();
-    if (res.ok) {
-      setEditFiles(prev => {
-        // Replace if name matches (upsert), otherwise append
-        const exists = prev.findIndex(f => f.name === data.name);
-        if (exists >= 0) { const next = [...prev]; next[exists] = data; return next; }
-        return [...prev, data];
-      });
-    } else {
-      setFileError(data.error || "Gagal upload file");
-    }
-    setFileUploading(false);
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `/api/snippets/${editSnippet.id}/files`);
+
+    xhr.upload.onprogress = (ev) => {
+      if (ev.lengthComputable) {
+        setUploadProgress(Math.round((ev.loaded / ev.total) * 100));
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status === 413) {
+        setFileError("File too large — server rejected it. Try a file under 4 MB.");
+        setFileUploading(false); setUploadProgress(0); return;
+      }
+      try {
+        const data = JSON.parse(xhr.responseText);
+        if (xhr.status >= 200 && xhr.status < 300) {
+          setEditFiles(prev => {
+            const exists = prev.findIndex(f => f.name === data.name);
+            if (exists >= 0) { const next = [...prev]; next[exists] = data; return next; }
+            return [...prev, data];
+          });
+        } else {
+          setFileError(data.error || "Upload failed");
+        }
+      } catch { setFileError(`Upload failed (status ${xhr.status})`); }
+      setFileUploading(false); setUploadProgress(0);
+    };
+
+    xhr.onerror = () => { setFileError("Network error during upload"); setFileUploading(false); setUploadProgress(0); };
+    xhr.send(fd);
   };
 
   const handleFileDelete = async (fileId: string) => {
@@ -589,7 +654,7 @@ export default function PostPage() {
                   <div style={{ border: "1.5px dashed var(--border-color)", borderRadius: 8, padding: "20px 16px", textAlign: "center", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-muted)", cursor: "pointer" }}
                     onClick={() => createFileInputRef.current?.click()}>
                     Click to attach a file<br/>
-                    <span style={{ fontSize: 10, opacity: 0.6 }}>Max. 10 MB per file · uploaded after save</span>
+                    <span style={{ fontSize: 10, opacity: 0.6 }}>Max. 4 MB per file · uploaded after save</span>
                   </div>
                 ) : (
                   <div style={{ border: "1.5px solid var(--border-color)", borderRadius: 8, overflow: "hidden" }}>
@@ -618,11 +683,34 @@ export default function PostPage() {
                 )}
               </div>
             </div>
-            <div className="modal-footer">
-              <button className="btn btn-white" onClick={() => { setShowCreateModal(false); setCreatePendingFiles([]); setCreateFileError(""); }}>CANCEL</button>
-              <button className="btn btn-teal" onClick={handleCreateSnippet} disabled={formLoading} title="Ctrl+S">
-                {formLoading ? "SAVING..." : "SAVE CODE"}{!formLoading && <span style={{ fontSize: 9, opacity: .5, marginLeft: 4 }}>Ctrl+S</span>}
-              </button>
+            <div className="modal-footer" style={{ flexDirection: "column", gap: 8, alignItems: "stretch" }}>
+              {/* Upload progress bar — only visible during file upload phase */}
+              {createUploadProgress && (
+                <div style={{ paddingBottom: 2 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-muted)", marginBottom: 5 }}>
+                    <span>Uploading file {createUploadProgress.current} of {createUploadProgress.total}…</span>
+                    <span style={{ fontWeight: 700, color: "var(--text)" }}>{createUploadProgress.pct}%</span>
+                  </div>
+                  <div style={{ height: 5, background: "var(--surface2)", borderRadius: 4, overflow: "hidden", border: "1px solid var(--border-color)" }}>
+                    <div style={{ height: "100%", width: `${createUploadProgress.pct}%`, background: "var(--teal)", borderRadius: 4, transition: "width 0.15s ease" }} />
+                  </div>
+                </div>
+              )}
+              {/* Upload error (shows if some files failed but snippet was still created) */}
+              {createUploadError && (
+                <div className="alert alert-error" style={{ fontSize: 11, padding: "6px 10px" }}>
+                  ⚠ {createUploadError}
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="btn btn-white" onClick={() => { setShowCreateModal(false); setCreatePendingFiles([]); setCreateFileError(""); setCreateUploadError(""); }} disabled={formLoading}>CANCEL</button>
+                <button className="btn btn-teal" onClick={handleCreateSnippet} disabled={formLoading} title="Ctrl+S" style={{ flex: 1 }}>
+                  {createUploadProgress
+                    ? `UPLOADING ${createUploadProgress.current}/${createUploadProgress.total}… ${createUploadProgress.pct}%`
+                    : formLoading ? "SAVING…" : "SAVE CODE"}
+                  {!formLoading && <span style={{ fontSize: 9, opacity: .5, marginLeft: 4 }}>Ctrl+S</span>}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -653,7 +741,7 @@ export default function PostPage() {
 
               {/* ── FILE ATTACHMENTS (edit) ── */}
               <div style={{ borderTop: "1.5px solid var(--divider)", paddingTop: 12 }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: fileUploading ? 8 : 10 }}>
                   <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 6 }}>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/>
@@ -667,17 +755,12 @@ export default function PostPage() {
                   </div>
                   <button
                     className="btn btn-teal"
-                    style={{ fontSize: 10, padding: "5px 12px", gap: 5 }}
-                    onClick={() => fileInputRef.current?.click()}
+                    style={{ fontSize: 10, padding: "5px 12px", gap: 5, minWidth: 110 }}
+                    onClick={() => !fileUploading && fileInputRef.current?.click()}
                     disabled={fileUploading}
                   >
                     {fileUploading ? (
-                      <>
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: "spin 1s linear infinite" }}>
-                          <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
-                        </svg>
-                        UPLOADING...
-                      </>
+                      <>{uploadProgress}%</>
                     ) : (
                       <>
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -689,12 +772,21 @@ export default function PostPage() {
                   </button>
                   <input ref={fileInputRef} type="file" style={{ display: "none" }} onChange={handleFileUpload} />
                 </div>
-                {fileError && <div className="alert alert-error" style={{ marginBottom: 8, fontSize: 11 }}>{fileError}</div>}
+                {fileUploading && (
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ height: 4, background: "var(--surface2)", borderRadius: 4, overflow: "hidden", border: "1px solid var(--border-color)" }}>
+                      <div style={{ height: "100%", width: `${uploadProgress}%`, background: "var(--teal)", borderRadius: 4, transition: "width 0.2s ease" }} />
+                    </div>
+                    <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
+                      Uploading... {uploadProgress}%
+                    </div>
+                  </div>
+                )}
                 {editFiles.length === 0 ? (
                   <div style={{ border: "1.5px dashed var(--border-color)", borderRadius: 8, padding: "20px 16px", textAlign: "center", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-muted)", cursor: "pointer" }}
                     onClick={() => fileInputRef.current?.click()}>
                     Click to attach a file<br/>
-                    <span style={{ fontSize: 10, opacity: 0.6 }}>Max. 10 MB per file</span>
+                    <span style={{ fontSize: 10, opacity: 0.6 }}>Max. 4 MB per file</span>
                   </div>
                 ) : (
                   <div style={{ border: "1.5px solid var(--border-color)", borderRadius: 8, overflow: "hidden" }}>

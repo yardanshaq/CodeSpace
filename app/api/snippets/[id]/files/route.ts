@@ -5,8 +5,10 @@ import { redis } from "@/lib/redis";
 import { randomBytes } from "crypto";
 
 export const dynamic = "force-dynamic";
+// Increase body size limit for this route handler (Next.js App Router)
+export const maxDuration = 30;
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_FILE_SIZE = 4 * 1024 * 1024; // 4MB — safe for Vercel Hobby + Upstash free tier
 const MAX_FILES_PER_SNIPPET = 20;
 
 // Allowed MIME types for upload — server-side whitelist (not trusting client type)

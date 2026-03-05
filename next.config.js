@@ -64,6 +64,13 @@ const nextConfig = {
       bodySizeLimit: "10mb",
     },
   },
+  // Increase body size limit for Route Handler API routes (file uploads)
+  api: {
+    bodyParser: {
+      sizeLimit: "10mb",
+    },
+    responseLimit: false,
+  },
 
   async headers() {
     const csp = buildCsp();
