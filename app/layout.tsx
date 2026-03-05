@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { ThemeProvider } from "@/components/ThemeProvider";
 
@@ -6,20 +6,51 @@ export const metadata: Metadata = {
   metadataBase: new URL("https://codespace.yardansh.com"),
   title: "CodeSpace",
   description: "A place to share simple snippets",
+  verification: {
+    google: "h75wZ6VzLYZfGhIiDkfQekWaBwC6s19N1NHynZNOgg4",
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
   openGraph: {
     title: "CodeSpace",
     description: "A place to share simple snippets",
+    url: "https://codespace.yardansh.com",
+    siteName: "CodeSpace",
     images: [
       {
         url: "https://cdn.nekohime.site/file/E_fVqMJ-.png",
         width: 1280,
         height: 640,
+        alt: "CodeSpace Cover",
       },
     ],
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "CodeSpace",
+    description: "A place to share simple snippets",
+    images: ["https://cdn.nekohime.site/file/E_fVqMJ-.png"],
+  },
+  icons: {
+    icon: [
+      { url: "https://cdn.nekohime.site/file/sOyPp0Jp.png" },
+      { url: "https://cdn.nekohime.site/file/R-r5NgoD.png", sizes: "16x16", type: "image/png" },
+      { url: "https://cdn.nekohime.site/file/R-r5NgoD.png", sizes: "32x32", type: "image/png" },
+    ],
+    apple: [
+      { url: "https://cdn.nekohime.site/file/sOyPp0Jp.png", sizes: "180x180" },
+    ],
+  },
+  alternates: {
+    canonical: "/",
   },
 };
 
-export const viewport = {
+export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -31,26 +62,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    // suppressHydrationWarning: mencegah React error #418/#422
-    // karena blocking script mengubah data-theme di client sebelum hydration,
-    // yang menyebabkan mismatch antara server HTML dan client DOM.
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/*
-          Blocking script — jalan SEBELUM browser render apapun.
-          Baca localStorage dan set data-theme di <html> seketika,
-          sehingga Navbar langsung dapat tema yang benar dari frame pertama.
-          Default: "light" jika belum pernah pilih tema.
-        */}
         <script
           dangerouslySetInnerHTML={{
             __html: `(function(){try{var t=localStorage.getItem('theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}})();`,
           }}
         />
-        <link rel="icon" type="image/x-icon" href="https://cdn.nekohime.site/file/sOyPp0Jp.png" />
-        <link rel="icon" type="image/png" sizes="32x32" href="https://cdn.nekohime.site/file/R-r5NgoD.png" />
-        <link rel="icon" type="image/png" sizes="16x16" href="https://cdn.nekohime.site/file/R-r5NgoD.png" />
-        <link rel="apple-touch-icon" sizes="180x180" href="https://cdn.nekohime.site/file/sOyPp0Jp.png" />
       </head>
       <body suppressHydrationWarning>
         <ThemeProvider>
