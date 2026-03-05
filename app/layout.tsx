@@ -37,12 +37,12 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: "https://cdn.nekohime.site/file/sOyPp0Jp.png" },
+      { url: "https://cdn.nekohime.site/file/1_6Wo0X-.png" },
       { url: "https://cdn.nekohime.site/file/nMZIBy7P.png", sizes: "16x16", type: "image/png" },
       { url: "https://cdn.nekohime.site/file/dtbHw_6g.png", sizes: "32x32", type: "image/png" },
     ],
     apple: [
-      { url: "https://cdn.nekohime.site/file/1_6Wo0X-.png", sizes: "180x180" },
+      { url: "https://cdn.nekohime.site/file/9Xs_b6Rk.png", sizes: "180x180" },
     ],
   },
   alternates: {
