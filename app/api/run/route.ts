@@ -541,27 +541,18 @@ ${processedCode}
               ]);
             }
 
-            // Tunggu microtask queue flush dulu sebelum cek output
-            await NativePromise.resolve();
-
-            // Kalau sudah ada output dan kode sync, langsung selesai tanpa nunggu lama
-            const isAsync = result && typeof (result as Promise<unknown>).then === "function";
-            if (!isAsync && (logs.length > 0 || errors.length > 0)) {
-              // kode sync sudah selesai — skip polling
-            } else {
-              // Tunggu sebentar untuk async ops yang masih jalan (setTimeout, dll)
-              let lastCount = logs.length + errors.length;
-              let stableRounds = 0;
-              while (Date.now() < deadline) {
-                await new NativePromise<void>(r => setTimeout(r, 20));
-                const current = logs.length + errors.length;
-                if (current === lastCount) {
-                  stableRounds++;
-                  if (stableRounds >= 2) break;
-                } else {
-                  stableRounds = 0;
-                  lastCount = current;
-                }
+            // Tunggu sebentar untuk async ops yang masih jalan (setTimeout, dll)
+            let lastCount = logs.length + errors.length;
+            let stableRounds = 0;
+            while (Date.now() < deadline) {
+              await new NativePromise<void>(r => setTimeout(r, 80));
+              const current = logs.length + errors.length;
+              if (current === lastCount) {
+                stableRounds++;
+                if (stableRounds >= 3) break;
+              } else {
+                stableRounds = 0;
+                lastCount = current;
               }
             }
           } catch (e: unknown) {

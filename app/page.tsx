@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import PageLoader from "@/components/PageLoader";
 
@@ -277,9 +276,9 @@ export default function HomePage() {
             {snippets.map((snippet) => (
               <div key={snippet.id} className="snippet-card">
                 <div className="snippet-card-header">
-                  <Link href={`/code?v=${snippet.filename}`} className="snippet-card-title" style={{ textDecoration: "none", color: "inherit" }}>
+                  <span className="snippet-card-title" onClick={() => router.push(`/code?v=${snippet.filename}`)}>
                     {snippet.title}
-                  </Link>
+                  </span>
                   <span className="snippet-views">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
@@ -300,7 +299,9 @@ export default function HomePage() {
                     </svg>
                     {snippet.admin.username}
                   </span>
-                  <Link href={`/code?v=${snippet.filename}`} className="btn btn-black" style={{ textDecoration: "none" }}>View</Link>
+                  <button className="btn btn-black" onClick={() => router.push(`/code?v=${snippet.filename}`)}>
+                    View
+                  </button>
                 </div>
               </div>
             ))}

@@ -132,13 +132,13 @@ export default function PostPage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [showCreateModal, showEditModal, form, editSnippet]);
 
+  // Lock body scroll when run modal is open
   useEffect(() => {
     if (showRunModal) {
+      const prev = document.body.style.overflow;
       document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "";
+      return () => { document.body.style.overflow = prev; };
     }
-    return () => { document.body.style.overflow = ""; };
   }, [showRunModal]);
 
   // Smart scroll: hanya scroll kalau output datang sedikit-sedikit (streaming lambat)
@@ -481,8 +481,8 @@ export default function PostPage() {
       {showRunModal && runSnippet && (
         <div className="modal-overlay">
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 660 }}>
-            <div className="modal-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span className="modal-title">▶ RUN OUTPUT — {runSnippet.filename}</span>
+            <div className="modal-header">
+              <span className="modal-title">▶ RUN — {runSnippet.filename}</span>
             </div>
             <div className="modal-body">
               <div
@@ -506,7 +506,7 @@ export default function PostPage() {
               <button className="btn btn-white" onClick={() => { navigator.clipboard.writeText(runOutput); setCopiedOutput(true); setTimeout(() => setCopiedOutput(false), 2000); }} disabled={running}>
                 {copiedOutput ? "✓ Copied!" : "⧉ Copy Output"}
               </button>
-              <button className="btn btn-black" onClick={() => setShowRunModal(false)}>Close</button>
+              <button className="btn btn-black" onClick={() => setShowRunModal(false)} disabled={running}>Close</button>
             </div>
           </div>
         </div>

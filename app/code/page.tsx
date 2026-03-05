@@ -4,8 +4,6 @@ import SnippetClient from "../snippet/[id]/SnippetClient";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 
-export const dynamic = "force-dynamic";
-
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://codespace.yardansh.com";
 
 const include = {
@@ -29,27 +27,34 @@ export async function generateMetadata({
 
   try {
     const snippet = await prisma.snippet.findFirst({
-      where: { OR: [{ id }, { filename: id }], isPublic: true },
-      select: { title: true, category: true, filename: true, admin: { select: { username: true } } },
+      where: { OR: [{ id }, { filename: id }] },
+      select: {
+        title:    true,
+        category: true,
+        filename: true,
+        isPublic: true,
+        admin:    { select: { username: true } },
+      },
     });
 
-    if (!snippet) return { title: "CodeSpace", description: "a place to share simple snippets" };
+    // Jangan bocorkan info snippet private di OG metadata
+    if (!snippet || !snippet.isPublic) return { title: "CodeSpace", description: "a place to share simple snippets" };
 
     const desc = `${snippet.category} snippet by ${snippet.admin.username} — ${snippet.filename}`;
 
     return {
-      title: snippet.title,
+      title:       snippet.title,
       description: desc,
       openGraph: {
-        title: snippet.title,
+        title:       snippet.title,
         description: desc,
-        url: `${BASE_URL}/code?v=${snippet.filename}`,
-        siteName: "CodeSpace",
-        type: "website",
+        url:         `${BASE_URL}/code?v=${snippet.filename}`,
+        siteName:    "CodeSpace",
+        type:        "website",
       },
       twitter: {
-        card: "summary",
-        title: snippet.title,
+        card:        "summary",
+        title:       snippet.title,
         description: desc,
       },
     };
@@ -66,31 +71,27 @@ export default async function CodePage({
   const id = searchParams.v;
   if (!id) redirect("/");
 
-  // Fetch dengan timeout — kalau DB lambat/cold start, tetap render halaman
-  // dengan initialData null. Client akan fetch sendiri via /api/snippets/:id
-  let initialData = null;
-  try {
-    const [snippet, session] = await Promise.all([
-      Promise.race([
-        prisma.snippet.findFirst({ where: { OR: [{ id }, { filename: id }] }, include }),
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
-      ]),
-      getSession(),
-    ]);
+  const [snippet, session] = await Promise.all([
+    prisma.snippet.findFirst({
+      where: { OR: [{ id }, { filename: id }] },
+      include,
+    }),
+    getSession(),
+  ]);
 
-    if (snippet) {
-      if (snippet.isPublic) {
-        initialData = { ...snippet, attachments: snippet.attachments.map((a: any) => a.globalFile) };
-      } else {
-        const isOwner = session?.id === snippet.adminId;
-        const isSuperAdmin = session?.role === "SUPERADMIN";
-        if (isOwner || isSuperAdmin) {
-          initialData = { ...snippet, attachments: snippet.attachments.map((a: any) => a.globalFile) };
-        }
+  // Private snippet: hanya owner atau SUPERADMIN yang boleh lihat
+  // Selain itu → tampilkan "SNIPPET NOT FOUND", bukan redirect ke login
+  let initialData = null;
+  if (snippet) {
+    if (snippet.isPublic) {
+      initialData = { ...snippet, attachments: snippet.attachments.map((a) => a.globalFile) };
+    } else {
+      const isOwner = session?.id === snippet.adminId;
+      const isSuperAdmin = session?.role === "SUPERADMIN";
+      if (isOwner || isSuperAdmin) {
+        initialData = { ...snippet, attachments: snippet.attachments.map((a) => a.globalFile) };
       }
     }
-  } catch {
-    // DB error — render tanpa initialData, client fetch sendiri
   }
 
   return <SnippetClient id={id} initialData={initialData as any} />;

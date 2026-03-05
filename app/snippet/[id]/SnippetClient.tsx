@@ -142,13 +142,13 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
   const userScrolledUp = useRef(false);
   const prevOutputLen = useRef(0);
 
+  // Lock body scroll when run modal is open
   useEffect(() => {
     if (showRunModal) {
+      const prev = document.body.style.overflow;
       document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "";
+      return () => { document.body.style.overflow = prev; };
     }
-    return () => { document.body.style.overflow = ""; };
   }, [showRunModal]);
 
   useEffect(() => {
@@ -500,8 +500,8 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
 
       {showRunModal && (
         <div className="modal-overlay">
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 660 }}>
-            <div className="modal-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div className="modal" style={{ maxWidth: 660 }}>
+            <div className="modal-header">
               <span className="modal-title">▶ RUN OUTPUT — {snippet.filename}</span>
             </div>
             <div className="modal-body">
@@ -522,7 +522,7 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
               <button className="btn btn-white" onClick={handleCopyOutput} disabled={running} style={{ flex: "none" }}>
                 {copiedOutput ? "✓ Copied!" : "⧉ Copy Output"}
               </button>
-              <button className="btn btn-black" onClick={() => setShowRunModal(false)} style={{ flex: "none" }}>Close</button>
+              <button className="btn btn-black" onClick={() => setShowRunModal(false)} disabled={running} style={{ flex: "none" }}>Close</button>
             </div>
           </div>
         </div>

@@ -4,9 +4,10 @@ import { getSession } from "@/lib/auth";
 export const dynamic = "force-dynamic";
 
 async function findSnippet(idOrFilename: string) {
-  return prisma.snippet.findFirst({
-    where: { OR: [{ id: idOrFilename }, { filename: idOrFilename }] },
-  });
+  return (
+    (await prisma.snippet.findUnique({ where: { id: idOrFilename } })) ??
+    (await prisma.snippet.findUnique({ where: { filename: idOrFilename } }))
+  );
 }
 
 async function findSnippetWithRelations(idOrFilename: string) {
@@ -20,10 +21,10 @@ async function findSnippetWithRelations(idOrFilename: string) {
       },
     },
   };
-  return prisma.snippet.findFirst({
-    where: { OR: [{ id: idOrFilename }, { filename: idOrFilename }] },
-    include,
-  });
+  return (
+    (await prisma.snippet.findUnique({ where: { id: idOrFilename }, include })) ??
+    (await prisma.snippet.findUnique({ where: { filename: idOrFilename }, include }))
+  );
 }
 
 export async function GET(
