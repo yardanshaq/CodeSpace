@@ -273,7 +273,7 @@ export default function PostPage() {
             }
           };
           xhr.onload = () => {
-            if (xhr.status === 413) { resolve({ ok: false, error: "File too large for server (max ~50 MB on this plan)" }); return; }
+            if (xhr.status === 413) { resolve({ ok: false, error: "File too large for server (max ~4 MB on this plan)" }); return; }
             try {
               const body = JSON.parse(xhr.responseText);
               resolve(xhr.status >= 200 && xhr.status < 300 ? { ok: true } : { ok: false, error: body.error || `Upload failed (${xhr.status})` });
@@ -349,8 +349,8 @@ export default function PostPage() {
     const file = e.target.files?.[0];
     if (createFileInputRef.current) createFileInputRef.current.value = "";
     if (!file) return;
-    const MAX = 50 * 1024 * 1024;
-    if (file.size > MAX) { setCreateFileError("File too large. Maximum 50 MB per file."); return; }
+    const MAX = 4 * 1024 * 1024;
+    if (file.size > MAX) { setCreateFileError("File too large. Maximum 4 MB per file."); return; }
     setCreateFileError("");
     const id = Math.random().toString(36).slice(2);
     setCreatePendingFiles(prev => {
@@ -371,8 +371,8 @@ export default function PostPage() {
     if (fileInputRef.current) fileInputRef.current.value = "";
     if (!file) return;
 
-    const MAX = 50 * 1024 * 1024;
-    if (file.size > MAX) { setFileError("File too large. Maximum 50 MB per file."); return; }
+    const MAX = 4 * 1024 * 1024;
+    if (file.size > MAX) { setFileError("File too large. Maximum 4 MB per file."); return; }
 
     setFileUploading(true); setUploadProgress(0); setFileError("");
     const fd = new FormData();
@@ -389,7 +389,7 @@ export default function PostPage() {
 
     xhr.onload = () => {
       if (xhr.status === 413) {
-        setFileError("File too large — server rejected it. Try a file under 50 MB.");
+        setFileError("File too large — server rejected it. Try a file under 4 MB.");
         setFileUploading(false); setUploadProgress(0); return;
       }
       try {
@@ -654,7 +654,7 @@ export default function PostPage() {
                   <div style={{ border: "1.5px dashed var(--border-color)", borderRadius: 8, padding: "20px 16px", textAlign: "center", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-muted)", cursor: "pointer" }}
                     onClick={() => createFileInputRef.current?.click()}>
                     Click to attach a file<br/>
-                    <span style={{ fontSize: 10, opacity: 0.6 }}>Max. 50 MB per file · uploaded after save</span>
+                    <span style={{ fontSize: 10, opacity: 0.6 }}>Max. 4 MB per file · uploaded after save</span>
                   </div>
                 ) : (
                   <div style={{ border: "1.5px solid var(--border-color)", borderRadius: 8, overflow: "hidden" }}>
@@ -786,7 +786,7 @@ export default function PostPage() {
                   <div style={{ border: "1.5px dashed var(--border-color)", borderRadius: 8, padding: "20px 16px", textAlign: "center", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-muted)", cursor: "pointer" }}
                     onClick={() => fileInputRef.current?.click()}>
                     Click to attach a file<br/>
-                    <span style={{ fontSize: 10, opacity: 0.6 }}>Max. 50 MB per file</span>
+                    <span style={{ fontSize: 10, opacity: 0.6 }}>Max. 4 MB per file</span>
                   </div>
                 ) : (
                   <div style={{ border: "1.5px solid var(--border-color)", borderRadius: 8, overflow: "hidden" }}>
