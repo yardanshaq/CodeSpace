@@ -91,10 +91,12 @@ const MODULE_MAP: Record<string, unknown> = {
   "assert": require("assert")
 };
 
-// createRequire: use a JS file path so webpack does not error
-const _requireBase = (typeof __filename !== "undefined" ? __filename : null)
-  ?? path.join(process.cwd(), "node_modules", "next", "dist", "server", "app-render", "work-unit-async-storage.external.js");
-const projectRequire = createRequire(_requireBase);
+// createRequire: use a fixed known path that webpack can resolve at build time.
+// Avoid referencing __filename directly — webpack in Next.js App Router
+// cannot statically parse it and emits a "module.createRequire failed" warning.
+const projectRequire = createRequire(
+  path.join(process.cwd(), "package.json")
+);
 
 
 // Collect sensitive env values once at server start — not per-request

@@ -98,6 +98,17 @@ const nextConfig = {
         "zencf",
       ];
     }
+
+    // Suppress "module.createRequire failed parsing argument" warning
+    // that comes from __filename usage in app/api/run/route.ts.
+    // We tell webpack to ignore the 'module' built-in — it's only used
+    // at runtime in Node.js, not needed at bundle time.
+    config.resolve = config.resolve ?? {};
+    config.resolve.fallback = {
+      ...(config.resolve.fallback ?? {}),
+      module: false,
+    };
+
     return config;
   },
 };
