@@ -13,6 +13,8 @@ interface Snippet {
   category: string;
   isPublic: boolean;
   views: number;
+  likeCount: number;
+  commentCount: number;
   admin: { username: string };
   createdAt: string;
   updatedAt: string;
@@ -23,22 +25,67 @@ interface NavUser {
   role: "SUPERADMIN" | "ADMIN" | "MEMBER";
 }
 
+type SortField = "createdAt" | "title" | "views";
+type SortOrder = "asc" | "desc";
+
+const SORT_OPTIONS: { field: SortField; labelAsc: string; labelDesc: string }[] = [
+  { field: "createdAt", labelAsc: "Date: Oldest",  labelDesc: "Date: Newest" },
+  { field: "title",     labelAsc: "Name: A - Z",   labelDesc: "Name: Z - A" },
+  { field: "views",     labelAsc: "Views: Lowest", labelDesc: "Views: Highest" },
+];
+
+// ── Category color map (shared dengan trending page) ──────────────────────────
+const CATEGORY_COLORS: Record<string, { bg: string; text: string }> = {
+  AI:         { bg: "#f5c542", text: "#000" },
+  Anime:      { bg: "#f472b6", text: "#000" },
+  Converter:  { bg: "#60a5fa", text: "#000" },
+  Downloader: { bg: "#f25c54", text: "#fff" },
+  Generator:  { bg: "#a78bfa", text: "#000" },
+  Other:      { bg: "#94a3b8", text: "#000" },
+  Random:     { bg: "#fb923c", text: "#000" },
+  Scrape:     { bg: "#4ecdc4", text: "#000" },
+  Search:     { bg: "#818cf8", text: "#fff" },
+  Tools:      { bg: "#4ade80", text: "#000" },
+  Translate:  { bg: "#34d399", text: "#000" },
+  Uploader:   { bg: "#f97316", text: "#fff" },
+};
+
+function getCategoryStyle(cat: string) {
+  return CATEGORY_COLORS[cat] ?? { bg: "var(--teal)", text: "#000" };
+}
+
+function formatDate(d: string) {
+  return new Date(d).toLocaleDateString("en-GB", {
+    day:   "2-digit",
+    month: "short",
+    year:  "numeric",
+  });
+}
+
 export default function HomePage() {
   const router = useRouter();
-  const [snippets, setSnippets] = useState<Snippet[]>([]);
-  const [search, setSearch] = useState("");
+  const [snippets, setSnippets]               = useState<Snippet[]>([]);
+  const [search, setSearch]                   = useState("");
   const [selectedAuthors, setSelectedAuthors] = useState<string[]>([]);
-  const [authors, setAuthors] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
-  const isFirstLoad = useRef(true);
-  const [showFilter, setShowFilter] = useState(false);
-  const [user, setUser] = useState<NavUser | null>(null);
-  const [userChecked, setUserChecked] = useState(false);
-  const filterRef = useRef<HTMLDivElement>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [authors, setAuthors]                 = useState<string[]>([]);
+  const [categories, setCategories]           = useState<string[]>([]);
+  const [loading, setLoading]                 = useState(true);
+  const isFirstLoad                           = useRef(true);
+  const [showFilter, setShowFilter]           = useState(false);
+  const [showSort, setShowSort]               = useState(false);
+  const [showCatFilter, setShowCatFilter]     = useState(false);
+  const [sortBy, setSortBy]                   = useState<SortField>("createdAt");
+  const [order, setOrder]                     = useState<SortOrder>("desc");
+  const [user, setUser]                       = useState<NavUser | null>(null);
+  const [userChecked, setUserChecked]         = useState(false);
+  const filterRef                             = useRef<HTMLDivElement>(null);
+  const sortRef                               = useRef<HTMLDivElement>(null);
+  const catFilterRef                          = useRef<HTMLDivElement>(null);
+  const pollRef                               = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const checkAuth = () => {
-    fetch("/api/auth/me")
+    fetch("/api/auth/me", { credentials: "include" })
       .then((r) => r.json())
       .then((data) => {
         setUser(data.authenticated ? data.user : null);
@@ -49,16 +96,15 @@ export default function HomePage() {
 
   useEffect(() => {
     checkAuth();
-    // Listen event logout dari Navbar
     window.addEventListener("auth-change", checkAuth);
     return () => window.removeEventListener("auth-change", checkAuth);
   }, []);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (filterRef.current && !filterRef.current.contains(e.target as Node)) {
-        setShowFilter(false);
-      }
+      if (filterRef.current    && !filterRef.current.contains(e.target as Node))    setShowFilter(false);
+      if (sortRef.current      && !sortRef.current.contains(e.target as Node))      setShowSort(false);
+      if (catFilterRef.current && !catFilterRef.current.contains(e.target as Node)) setShowCatFilter(false);
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -69,33 +115,43 @@ export default function HomePage() {
     try {
       const params = new URLSearchParams();
       if (search) params.set("search", search);
+      params.set("sortBy", sortBy);
+      params.set("order", order);
       if (silent) params.set("_", Date.now().toString());
-      const res = await fetch(`/api/snippets?${params.toString()}`);
+      const res  = await fetch(`/api/snippets?${params.toString()}`);
       const data = await res.json();
       const list = Array.isArray(data) ? data : [];
 
       const unique = Array.from(new Set(list.map((s: Snippet) => s.admin.username))) as string[];
+      const uniqueCats = Array.from(new Set(list.map((s: Snippet) => s.category))) as string[];
 
-      const filtered = selectedAuthors.length > 0
+      // Apply author filter
+      let filtered = selectedAuthors.length > 0
         ? list.filter((s: Snippet) => selectedAuthors.includes(s.admin.username))
         : list;
 
+      // Apply category filter
+      if (selectedCategories.length > 0) {
+        filtered = filtered.filter((s: Snippet) => selectedCategories.includes(s.category));
+      }
+
       if (silent) {
-        // Smart merge: only update if something actually changed
         setSnippets(prev => {
-          const prevMap = new Map(prev.map(s => [s.id, s]));
+          const prevMap    = new Map(prev.map(s => [s.id, s]));
           const hasChanges =
             prev.length !== filtered.length ||
             filtered.some((s: Snippet) => {
               const old = prevMap.get(s.id);
-              return !old || old.views !== s.views || old.updatedAt !== s.updatedAt || old.title !== s.title;
+              return !old || old.views !== s.views || old.updatedAt !== s.updatedAt || old.title !== s.title || old.likeCount !== s.likeCount;
             });
           if (!hasChanges) return prev;
           return filtered;
         });
         setAuthors(unique);
+        setCategories(uniqueCats);
       } else {
         setAuthors(unique);
+        setCategories(uniqueCats);
         setSnippets(filtered);
         if (isFirstLoad.current) {
           setLoading(false);
@@ -103,32 +159,36 @@ export default function HomePage() {
         }
       }
     } catch { /* silent fail */ }
-  }, [search, selectedAuthors]);
+  }, [search, selectedAuthors, selectedCategories, sortBy, order]);
 
-  // Initial fetch + re-fetch on search/filter change (debounced)
   useEffect(() => {
     const timer = setTimeout(() => fetchSnippets(false), 300);
     return () => clearTimeout(timer);
   }, [fetchSnippets]);
 
-  // Background poll every 3s for live updates (new snippets, deletions, view counts)
   useEffect(() => {
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = setInterval(() => fetchSnippets(true), 3000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [fetchSnippets]);
 
-  const toggleAuthor = (a: string) => {
-    setSelectedAuthors((prev) =>
-      prev.includes(a) ? prev.filter((x) => x !== a) : [...prev, a]
-    );
-  };
+  const toggleAuthor   = (a: string) =>
+    setSelectedAuthors((prev) => prev.includes(a) ? prev.filter(x => x !== a) : [...prev, a]);
+  const clearAuthors   = () => setSelectedAuthors([]);
 
-  const clearAuthors = () => setSelectedAuthors([]);
+  const toggleCategory = (c: string) =>
+    setSelectedCategories((prev) => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c]);
+  const clearCategories = () => setSelectedCategories([]);
 
-  const handlePostClick = () => {
-    router.push(user ? "/post" : "/login");
-  };
+  const handlePostClick = () => router.push(user ? "/post" : "/login");
+
+  const currentSortLabel = (() => {
+    const opt = SORT_OPTIONS.find(o => o.field === sortBy);
+    if (!opt) return "Sort";
+    return order === "asc" ? opt.labelAsc : opt.labelDesc;
+  })();
+
+  const totalActiveFilters = selectedAuthors.length + selectedCategories.length;
 
   return (
     <>
@@ -138,13 +198,58 @@ export default function HomePage() {
           <h1 className="home-title">CodeSpace</h1>
           <p className="home-subtitle">a place to share simple snippets</p>
 
+          {/* ── Trending & Feedback buttons ── */}
+          <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 20, flexWrap: "wrap" }}>
+            <button
+              onClick={() => router.push("/trending")}
+              style={{
+                display: "flex", alignItems: "center", gap: 8,
+                padding: "10px 20px", borderRadius: 999,
+                border: "2px solid var(--border-color)",
+                background: "var(--surface)",
+                color: "var(--text)", cursor: "pointer",
+                fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700,
+                boxShadow: "3px 3px 0 var(--border-color)",
+                letterSpacing: "0.04em", transition: "all .15s",
+              }}
+              onMouseOver={e => { e.currentTarget.style.transform = "translate(-1px,-1px)"; e.currentTarget.style.boxShadow = "4px 4px 0 var(--border-color)"; }}
+              onMouseOut={e  => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "3px 3px 0 var(--border-color)"; }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--yellow)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>
+              </svg>
+              Trending
+            </button>
+
+            <button
+              onClick={() => router.push("/feedback")}
+              style={{
+                display: "flex", alignItems: "center", gap: 8,
+                padding: "10px 20px", borderRadius: 999,
+                border: "2px solid var(--border-color)",
+                background: "var(--surface)",
+                color: "var(--text)", cursor: "pointer",
+                fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700,
+                boxShadow: "3px 3px 0 var(--border-color)",
+                letterSpacing: "0.04em", transition: "all .15s",
+              }}
+              onMouseOver={e => { e.currentTarget.style.transform = "translate(-1px,-1px)"; e.currentTarget.style.boxShadow = "4px 4px 0 var(--border-color)"; }}
+              onMouseOut={e  => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "3px 3px 0 var(--border-color)"; }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--teal)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+              </svg>
+              Send Feedback
+            </button>
+          </div>
 
         </div>
 
-        {/* Search + Filter + Post button */}
-        <div className="search-row" style={{ maxWidth: 660, margin: "0 auto 40px", display: "flex", gap: 10, alignItems: "center" }}>
+        {/* ── Search + Controls row ── */}
+        <div className="search-row-wrap">
+
           {/* Search input */}
-          <div style={{ flex: 1, position: "relative" }}>
+          <div style={{ flex: 1, position: "relative", minWidth: 0 }}>
             <input
               type="text"
               className="search-input"
@@ -155,141 +260,255 @@ export default function HomePage() {
             />
             <span className="search-icon">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="11" cy="11" r="8"/>
-                <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
               </svg>
             </span>
           </div>
 
-          {/* Filter button */}
-          <div ref={filterRef} className="search-action-btn" style={{ position: "relative", flexShrink: 0 }}>
-            <button
-              onClick={() => setShowFilter((v) => !v)}
-              style={{
-                width: 52, height: 52,
-                border: "2.5px solid var(--border-color)",
-                borderRadius: 12,
-                background: selectedAuthors.length > 0 ? "var(--teal)" : "var(--surface)",
-                cursor: "pointer",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                boxShadow: "3px 3px 0 var(--border-color)",
-                position: "relative", flexShrink: 0,
-              }}
-              title="Filter by author"
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/>
-                <line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/>
-                <line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/>
-                <line x1="1" y1="14" x2="7" y2="14"/>
-                <line x1="9" y1="8" x2="15" y2="8"/>
-                <line x1="17" y1="16" x2="23" y2="16"/>
-              </svg>
-              {selectedAuthors.length > 0 && (
-                <span style={{
-                  position: "absolute", top: -8, right: -8,
-                  background: "var(--red)", color: "#fff",
-                  borderRadius: "50%", width: 20, height: 20,
-                  fontSize: 10, fontWeight: 700,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  border: "2px solid var(--border-color)",
-                  fontFamily: "var(--font-mono)",
-                }}>
-                  {selectedAuthors.length}
-                </span>
-              )}
-            </button>
+          {/* Controls group: Sort + Author + Category + POST */}
+          <div className="search-controls-group">
 
-            {showFilter && (
-              <div style={{
-                position: "absolute",
-                top: "calc(100% + 10px)",
-                right: 0,
-                background: "var(--surface)",
-                border: "2.5px solid var(--border-color)",
-                borderRadius: 12,
-                boxShadow: "4px 4px 0 var(--border-color)",
-                padding: 16,
-                minWidth: 200,
-                zIndex: 100,
-              }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, fontFamily: "var(--font-mono)", letterSpacing: "0.08em", color: "var(--text)" }}>
-                    FILTER BY AUTHOR
+            {/* Sort button */}
+            <div ref={sortRef} style={{ position: "relative", flexShrink: 0 }}>
+              <button
+                onClick={() => { setShowSort(v => !v); setShowFilter(false); setShowCatFilter(false); }}
+                style={{
+                  height: 52, padding: "0 14px",
+                  border: "2.5px solid var(--border-color)", borderRadius: 12,
+                  background: showSort ? "var(--surface2)" : "var(--surface)",
+                  cursor: "pointer", display: "flex", alignItems: "center", gap: 6,
+                  boxShadow: "3px 3px 0 var(--border-color)",
+                  fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700,
+                  color: "var(--text)", whiteSpace: "nowrap", letterSpacing: "0.04em",
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="3" y1="6" x2="21" y2="6"/><line x1="6" y1="12" x2="18" y2="12"/><line x1="10" y1="18" x2="14" y2="18"/>
+                </svg>
+                <span className="sort-btn-label">{currentSortLabel}</span>
+              </button>
+
+              {showSort && (
+                <div className="dropdown-panel" style={{ left: 0 }}>
+                  <div style={{ fontSize: 9, fontWeight: 700, fontFamily: "var(--font-mono)", letterSpacing: "0.12em", color: "var(--text-muted)", marginBottom: 10, textTransform: "uppercase" }}>
+                    Sort By
+                  </div>
+                  {SORT_OPTIONS.map(opt => (
+                    <div key={opt.field}>
+                      {(["asc", "desc"] as SortOrder[]).map(dir => {
+                        const label    = dir === "asc" ? opt.labelAsc : opt.labelDesc;
+                        const isActive = sortBy === opt.field && order === dir;
+                        return (
+                          <div
+                            key={dir}
+                            onClick={() => { setSortBy(opt.field); setOrder(dir); setShowSort(false); }}
+                            onMouseDown={(e) => { e.preventDefault(); setSortBy(opt.field); setOrder(dir); setShowSort(false); }}
+                            style={{
+                              padding: "8px 10px", borderRadius: 8, cursor: "pointer",
+                              background: isActive ? "var(--teal)" : "transparent",
+                              color: isActive ? "#000" : "var(--text)",
+                              fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: isActive ? 700 : 600,
+                              display: "flex", alignItems: "center", gap: 8,
+                            }}
+                            onMouseOver={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "var(--surface2)"; }}
+                            onMouseOut={e  => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                          >
+                            {isActive && (
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="20 6 9 17 4 12"/>
+                              </svg>
+                            )}
+                            {label}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Filter by author */}
+            <div ref={filterRef} style={{ position: "relative", flexShrink: 0 }}>
+              <button
+                onClick={() => { setShowFilter(v => !v); setShowSort(false); setShowCatFilter(false); }}
+                style={{
+                  width: 52, height: 52,
+                  border: "2.5px solid var(--border-color)", borderRadius: 12,
+                  background: selectedAuthors.length > 0 ? "var(--teal)" : "var(--surface)",
+                  cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                  boxShadow: "3px 3px 0 var(--border-color)", position: "relative",
+                }}
+                title="Filter by author"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/>
+                  <line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/>
+                  <line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/>
+                  <line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>
+                </svg>
+                {selectedAuthors.length > 0 && (
+                  <span style={{
+                    position: "absolute", top: -8, right: -8,
+                    background: "var(--red)", color: "#fff", borderRadius: "50%",
+                    width: 20, height: 20, fontSize: 10, fontWeight: 700,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    border: "2px solid var(--border-color)", fontFamily: "var(--font-mono)",
+                  }}>
+                    {selectedAuthors.length}
                   </span>
+                )}
+              </button>
+
+              {showFilter && (
+                <div className="dropdown-panel" style={{ right: 0 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, fontFamily: "var(--font-mono)", letterSpacing: "0.08em", color: "var(--text)" }}>
+                      FILTER BY AUTHOR
+                    </span>
+                    {selectedAuthors.length > 0 && (
+                      <button onClick={clearAuthors} style={{ fontSize: 10, fontFamily: "var(--font-mono)", background: "none", border: "none", cursor: "pointer", color: "var(--red)", fontWeight: 700 }}>
+                        CLEAR
+                      </button>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {authors.map(a => {
+                      const selected = selectedAuthors.includes(a);
+                      return (
+                        <div key={a} onClick={() => toggleAuthor(a)} style={{
+                          display: "flex", alignItems: "center", gap: 10, padding: "8px 10px",
+                          border: `2px solid ${selected ? "var(--teal)" : "var(--border-color)"}`,
+                          borderRadius: 8, cursor: "pointer",
+                          background: selected ? "rgba(78,205,196,0.1)" : "var(--surface)",
+                          boxShadow: selected ? "2px 2px 0 var(--teal)" : "2px 2px 0 var(--border-color)",
+                          transition: "all .1s",
+                        }}>
+                          <div style={{
+                            width: 18, height: 18, border: "2px solid var(--border-color)", borderRadius: 4,
+                            background: selected ? "var(--teal)" : "var(--surface)",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            fontSize: 11, fontWeight: 700, flexShrink: 0, color: "#000",
+                          }}>
+                            {selected && "x"}
+                          </div>
+                          <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", fontWeight: 600, color: "var(--text)" }}>{a}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
                   {selectedAuthors.length > 0 && (
-                    <button onClick={clearAuthors} style={{ fontSize: 10, fontFamily: "var(--font-mono)", background: "none", border: "none", cursor: "pointer", color: "var(--red)", fontWeight: 700 }}>
-                      CLEAR
-                    </button>
+                    <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1.5px solid var(--divider)", fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                      {selectedAuthors.length} author{selectedAuthors.length > 1 ? "s" : ""} selected
+                    </div>
                   )}
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {authors.map((a) => {
-                    const selected = selectedAuthors.includes(a);
-                    return (
-                      <div key={a} onClick={() => toggleAuthor(a)} style={{
-                        display: "flex", alignItems: "center", gap: 10,
-                        padding: "8px 10px",
-                        border: `2px solid ${selected ? "var(--teal)" : "var(--border-color)"}`,
-                        borderRadius: 8, cursor: "pointer",
-                        background: selected ? "rgba(78,205,196,0.1)" : "var(--surface)",
-                        boxShadow: selected ? "2px 2px 0 var(--teal)" : "2px 2px 0 var(--border-color)",
-                        transition: "all .1s",
-                      }}>
-                        <div style={{
-                          width: 18, height: 18,
-                          border: "2px solid var(--border-color)",
-                          borderRadius: 4,
-                          background: selected ? "var(--teal)" : "var(--surface)",
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                          fontSize: 11, fontWeight: 700, flexShrink: 0, color: "#000",
-                        }}>
-                          {selected && "✓"}
-                        </div>
-                        <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", fontWeight: 600, color: "var(--text)" }}>{a}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-                {selectedAuthors.length > 0 && (
-                  <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1.5px solid var(--divider)", fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-                    {selectedAuthors.length} author{selectedAuthors.length > 1 ? "s" : ""} selected
-                  </div>
+              )}
+            </div>
+
+            {/* Filter by category */}
+            <div ref={catFilterRef} style={{ position: "relative", flexShrink: 0 }}>
+              <button
+                onClick={() => { setShowCatFilter(v => !v); setShowSort(false); setShowFilter(false); }}
+                style={{
+                  width: 52, height: 52,
+                  border: "2.5px solid var(--border-color)", borderRadius: 12,
+                  background: selectedCategories.length > 0 ? "var(--yellow)" : "var(--surface)",
+                  cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                  boxShadow: "3px 3px 0 var(--border-color)", position: "relative",
+                }}
+                title="Filter by category"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+                </svg>
+                {selectedCategories.length > 0 && (
+                  <span style={{
+                    position: "absolute", top: -8, right: -8,
+                    background: "var(--red)", color: "#fff", borderRadius: "50%",
+                    width: 20, height: 20, fontSize: 10, fontWeight: 700,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    border: "2px solid var(--border-color)", fontFamily: "var(--font-mono)",
+                  }}>
+                    {selectedCategories.length}
+                  </span>
                 )}
-              </div>
+              </button>
+
+              {showCatFilter && (
+                <div className="dropdown-panel" style={{ right: 0 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, fontFamily: "var(--font-mono)", letterSpacing: "0.08em", color: "var(--text)" }}>
+                      FILTER BY CATEGORY
+                    </span>
+                    {selectedCategories.length > 0 && (
+                      <button onClick={clearCategories} style={{ fontSize: 10, fontFamily: "var(--font-mono)", background: "none", border: "none", cursor: "pointer", color: "var(--red)", fontWeight: 700 }}>
+                        CLEAR
+                      </button>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {categories.map(cat => {
+                      const selected = selectedCategories.includes(cat);
+                      const catStyle = getCategoryStyle(cat);
+                      return (
+                        <div key={cat} onClick={() => toggleCategory(cat)} style={{
+                          display: "flex", alignItems: "center", gap: 10, padding: "8px 10px",
+                          border: `2px solid ${selected ? catStyle.bg : "var(--border-color)"}`,
+                          borderRadius: 8, cursor: "pointer",
+                          background: selected ? `${catStyle.bg}22` : "var(--surface)",
+                          boxShadow: selected ? `2px 2px 0 ${catStyle.bg}` : "2px 2px 0 var(--border-color)",
+                          transition: "all .1s",
+                        }}>
+                          <div style={{
+                            width: 18, height: 18, border: `2px solid ${selected ? catStyle.bg : "var(--border-color)"}`, borderRadius: 4,
+                            background: selected ? catStyle.bg : "var(--surface)",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            fontSize: 11, fontWeight: 700, flexShrink: 0, color: catStyle.text,
+                          }}>
+                            {selected && "x"}
+                          </div>
+                          <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", fontWeight: 600, color: "var(--text)" }}>{cat}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {selectedCategories.length > 0 && (
+                    <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1.5px solid var(--divider)", fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                      {selectedCategories.length} categor{selectedCategories.length > 1 ? "ies" : "y"} selected
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* POST button */}
+            {userChecked && user && (
+              <button
+                onClick={handlePostClick}
+                title="Post a snippet"
+                style={{
+                  height: 52, padding: "0 18px", flexShrink: 0,
+                  border: "2.5px solid var(--border-color)", borderRadius: 12,
+                  background: "var(--teal)", color: "#000", cursor: "pointer",
+                  display: "flex", alignItems: "center", gap: 7,
+                  boxShadow: "3px 3px 0 var(--border-color)",
+                  fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700,
+                  letterSpacing: "0.06em", transition: "all .1s", whiteSpace: "nowrap",
+                }}
+                onMouseOver={e => { e.currentTarget.style.transform = "translate(-1px,-1px)"; e.currentTarget.style.boxShadow = "4px 4px 0 var(--border-color)"; }}
+                onMouseOut={e  => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "3px 3px 0 var(--border-color)"; }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+                <span className="post-btn-label">POST</span>
+              </button>
             )}
           </div>
-
-          {/* POST button — hanya tampil kalau sudah login */}
-          {userChecked && user && (
-            <button
-              onClick={handlePostClick}
-              title="Post a snippet"
-              className="search-action-btn"
-              style={{
-                height: 52, padding: "0 18px", flexShrink: 0,
-                border: "2.5px solid var(--border-color)",
-                borderRadius: 12,
-                background: "var(--teal)",
-                color: "#000",
-                cursor: "pointer",
-                display: "flex", alignItems: "center", gap: 7,
-                boxShadow: "3px 3px 0 var(--border-color)",
-                fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700,
-                letterSpacing: "0.06em",
-                transition: "all .1s",
-                whiteSpace: "nowrap",
-              }}
-              onMouseOver={(e) => { e.currentTarget.style.transform = "translate(-1px,-1px)"; e.currentTarget.style.boxShadow = "4px 4px 0 var(--border-color)"; }}
-              onMouseOut={(e) => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "3px 3px 0 var(--border-color)"; }}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-              </svg>
-              POST
-            </button>
-          )}
         </div>
+
+        <div style={{ marginBottom: 28 }} />
 
         {/* Snippets grid */}
         {loading ? (
@@ -298,43 +517,78 @@ export default function HomePage() {
           <div className="loading">NO SNIPPETS FOUND.</div>
         ) : (
           <div className="snippets-grid">
-            {snippets.map((snippet) => (
-              <div key={snippet.id} className="snippet-card">
-                <div className="snippet-card-header">
-                  <span className="snippet-card-title" onClick={() => router.push(`/code?v=${snippet.filename}`)}>
-                    {snippet.title}
-                  </span>
-                  <span className="snippet-views">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                      <circle cx="12" cy="12" r="3"/>
-                    </svg>
-                    {snippet.views}
-                  </span>
-                </div>
+            {snippets.map((snippet) => {
+              const catStyle = getCategoryStyle(snippet.category);
+              return (
+                <div key={snippet.id} className="snippet-card">
+                  <div className="snippet-card-header">
+                    <span className="snippet-card-title" onClick={() => router.push(`/code?v=${snippet.filename}`)}>
+                      {snippet.title}
+                    </span>
+                    <span className="snippet-views">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+                      </svg>
+                      {snippet.views}
+                    </span>
+                  </div>
 
-                <span className="snippet-filename">{snippet.filename}</span>
-                <span className="snippet-category-badge">{snippet.category.toUpperCase()}</span>
+                  <span className="snippet-filename">{snippet.filename}</span>
 
-                <div className="snippet-card-footer">
-                  <span className="snippet-author">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                      <circle cx="12" cy="7" r="4"/>
-                    </svg>
-                    {snippet.admin.username}
+                  {/* Category badge — original class + color only */}
+                  <span
+                    className="snippet-category-badge"
+                    style={{ background: catStyle.bg, color: catStyle.text, borderColor: catStyle.bg }}
+                  >
+                    {snippet.category.toUpperCase()}
                   </span>
-                  <button className="btn btn-black" onClick={() => router.push(`/code?v=${snippet.filename}`)}>
-                    View
-                  </button>
+
+                  {/* Date + like/comment counts row */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: "var(--text-faint)", fontFamily: "var(--font-mono)" }}>
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+                      </svg>
+                      {formatDate(snippet.createdAt)}
+                      {snippet.updatedAt !== snippet.createdAt && (
+                        <span style={{ color: "var(--text-faint)", marginLeft: 2 }}>(updated {formatDate(snippet.updatedAt)})</span>
+                      )}
+                    </span>
+                    <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: "var(--text-faint)", fontFamily: "var(--font-mono)" }}>
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                      </svg>
+                      {snippet.likeCount}
+                    </span>
+                    {snippet.commentCount > 0 && (
+                      <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: "var(--text-faint)", fontFamily: "var(--font-mono)" }}>
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                        </svg>
+                        {snippet.commentCount}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="snippet-card-footer">
+                    <span className="snippet-author">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+                      </svg>
+                      {snippet.admin.username}
+                    </span>
+                    <button className="btn btn-black" onClick={() => router.push(`/code?v=${snippet.filename}`)}>
+                      View
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </main>
 
-      {/* ─── FOOTER ─── */}
+      {/* FOOTER */}
       <footer style={{
         marginTop: 80,
         borderTop: "2.5px solid var(--border-color)",
@@ -342,8 +596,6 @@ export default function HomePage() {
         boxShadow: "0 -4px 0 var(--border-color)",
       }}>
         <div style={{ maxWidth: 1100, margin: "0 auto", padding: "40px 24px 0" }}>
-
-          {/* Top section */}
           <div className="footer-inner" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 40, marginBottom: 36 }}>
 
             {/* Brand */}
@@ -351,8 +603,7 @@ export default function HomePage() {
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
                 <div style={{
                   width: 32, height: 32, borderRadius: 8,
-                  background: "var(--teal)",
-                  border: "2px solid var(--border-color)",
+                  background: "var(--teal)", border: "2px solid var(--border-color)",
                   boxShadow: "2px 2px 0 var(--border-color)",
                   display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
                 }}>
@@ -375,18 +626,14 @@ export default function HomePage() {
                   <a key={href} href={href} target="_blank" rel="noopener noreferrer" style={{
                     width: 36, height: 36, borderRadius: 8, display: "flex",
                     alignItems: "center", justifyContent: "center",
-                    color: "var(--text-muted)",
-                    border: "2px solid var(--border-color)",
-                    boxShadow: "2px 2px 0 var(--border-color)",
-                    background: "var(--surface2)",
+                    color: "var(--text-muted)", border: "2px solid var(--border-color)",
+                    boxShadow: "2px 2px 0 var(--border-color)", background: "var(--surface2)",
                     transition: "all .15s",
                   }}
-                    onMouseOver={(e) => { e.currentTarget.style.color = "var(--teal)"; e.currentTarget.style.transform = "translate(-1px,-1px)"; e.currentTarget.style.boxShadow = "3px 3px 0 var(--border-color)"; }}
-                    onMouseOut={(e) => { e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "2px 2px 0 var(--border-color)"; }}
+                    onMouseOver={e => { e.currentTarget.style.color = "var(--teal)"; e.currentTarget.style.transform = "translate(-1px,-1px)"; e.currentTarget.style.boxShadow = "3px 3px 0 var(--border-color)"; }}
+                    onMouseOut={e  => { e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "2px 2px 0 var(--border-color)"; }}
                   >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      {icon}
-                    </svg>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{icon}</svg>
                   </a>
                 ))}
               </div>
@@ -400,12 +647,14 @@ export default function HomePage() {
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   {[
-                    { label: "Home", href: "/" },
-                    { label: "Post a Snippet", href: "/post" },
+                    { label: "Home",         href: "/" },
+                    { label: "Trending",     href: "/trending" },
+                    { label: "Post Snippet", href: "/post" },
+                    { label: "Feedback",     href: "/feedback" },
                   ].map(({ label, href }) => (
                     <a key={href} href={href} style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--text-muted)", textDecoration: "none", transition: "color .15s" }}
-                      onMouseOver={(e) => (e.currentTarget.style.color = "var(--teal)")}
-                      onMouseOut={(e) => (e.currentTarget.style.color = "var(--text-muted)")}>
+                      onMouseOver={e => (e.currentTarget.style.color = "var(--teal)")}
+                      onMouseOut={e  => (e.currentTarget.style.color = "var(--text-muted)")}>
                       {label}
                     </a>
                   ))}
@@ -416,12 +665,34 @@ export default function HomePage() {
                   Categories
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  {["Scrape", "AI", "Downloader", "Search", "Tools"].map((cat) => (
-                    <span key={cat} style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--text-muted)", cursor: "pointer", transition: "color .15s" }}
-                      onMouseOver={(e) => (e.currentTarget.style.color = "var(--teal)")}
-                      onMouseOut={(e) => (e.currentTarget.style.color = "var(--text-muted)")}>
+                  {["Scrape", "AI", "Downloader", "Search", "Tools"].map(cat => (
+                    <span key={cat}
+                      onClick={() => {
+                        setSelectedCategories(prev => prev.length === 1 && prev[0] === cat ? [] : [cat]);
+                        window.scrollTo({ top: 0, behavior: "smooth" });
+                      }}
+                      style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--text-muted)", cursor: "pointer", transition: "color .15s" }}
+                      onMouseOver={e => (e.currentTarget.style.color = "var(--teal)")}
+                      onMouseOut={e  => (e.currentTarget.style.color = "var(--text-muted)")}>
                       {cat}
                     </span>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, fontWeight: 700, letterSpacing: "0.12em", color: "var(--text-muted)", marginBottom: 14, textTransform: "uppercase", borderBottom: "1.5px solid var(--border-color)", paddingBottom: 8 }}>
+                  Account
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {[
+                    { label: "Register", href: "/register" },
+                    { label: "Sign In",  href: "/login" },
+                  ].map(({ label, href }) => (
+                    <a key={href} href={href} style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--text-muted)", textDecoration: "none", transition: "color .15s" }}
+                      onMouseOver={e => (e.currentTarget.style.color = "var(--teal)")}
+                      onMouseOut={e  => (e.currentTarget.style.color = "var(--text-muted)")}>
+                      {label}
+                    </a>
                   ))}
                 </div>
               </div>
@@ -430,22 +701,17 @@ export default function HomePage() {
         </div>
 
         {/* Bottom bar */}
-        <div className="footer-bottom" style={{
-          borderTop: "2px solid var(--border-color)",
-          background: "var(--surface2)",
-          padding: "14px 24px",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: 12,
-          marginTop: 0,
+        <div style={{
+          borderTop: "1.5px solid var(--border-color)",
+          padding: "12px 24px", display: "flex", justifyContent: "space-between",
+          alignItems: "center", gap: 12, flexWrap: "wrap",
         }}>
           <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-faint)" }}>
-            © {new Date().getFullYear()} CodeSpace · Built by{" "}
+            {new Date().getFullYear()} CodeSpace · Built by{" "}
             <a href="https://www.yardansh.com" target="_blank" rel="noopener noreferrer"
               style={{ color: "var(--text-muted)", textDecoration: "none" }}
-              onMouseOver={(e) => (e.currentTarget.style.color = "var(--teal)")}
-              onMouseOut={(e) => (e.currentTarget.style.color = "var(--text-muted)")}>
+              onMouseOver={e => (e.currentTarget.style.color = "var(--teal)")}
+              onMouseOut={e  => (e.currentTarget.style.color = "var(--text-muted)")}>
               Shaq
             </a>
           </span>
@@ -455,6 +721,59 @@ export default function HomePage() {
           </span>
         </div>
       </footer>
+
+      <style>{`
+        /* ── Search row responsive layout ── */
+        .search-row-wrap {
+          max-width: 700px;
+          margin: 0 auto 40px;
+          padding: 0 16px;
+          display: flex;
+          flex-wrap: nowrap;
+          gap: 10px;
+          align-items: center;
+        }
+        .search-controls-group {
+          display: flex;
+          gap: 10px;
+          align-items: center;
+          flex-shrink: 0;
+        }
+        .dropdown-panel {
+          position: absolute;
+          top: calc(100% + 10px);
+          background: var(--surface);
+          border: 2.5px solid var(--border-color);
+          border-radius: 12px;
+          box-shadow: 4px 4px 0 var(--border-color);
+          padding: 10px;
+          min-width: 200px;
+          z-index: 200;
+        }
+        .sort-btn-label { display: inline; }
+        .post-btn-label { display: inline; }
+
+        /* ── Mobile: 2-row layout ── */
+        @media (max-width: 600px) {
+          .search-row-wrap {
+            flex-wrap: wrap;
+            margin-bottom: 12px;
+          }
+          .search-row-wrap > div:first-child {
+            flex: 1 1 100%;
+          }
+          .search-controls-group {
+            flex: 1 1 100%;
+            justify-content: flex-start;
+          }
+          /* POST label hidden on mobile to save space */
+          .post-btn-label { display: none; }
+          /* Sort label hidden on very small screens */
+        }
+        @media (max-width: 400px) {
+          .sort-btn-label { display: none; }
+        }
+      `}</style>
     </>
   );
 }

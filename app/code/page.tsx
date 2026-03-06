@@ -87,5 +87,5 @@ export default async function CodePage({
     }
   }
 
-  return <SnippetClient id={id} initialData={initialData as any} />;
+  return <SnippetClient id={initialData ? (initialData as any).id : id} initialData={initialData as any} />;
 }
