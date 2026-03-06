@@ -4,7 +4,6 @@
   "private": true,
   "overrides": {
     "undici": "5.28.4",
-    "tough-cookie": "^4.1.4",
     "semver": "^7.5.4",
     "word-wrap": "^1.2.4",
     "ip": "^2.0.1",
