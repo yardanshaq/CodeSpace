@@ -129,10 +129,6 @@ const roleColor = (role: string) =>
 export default function SnippetClient({ id, initialData }: { id: string; initialData?: Snippet | null }) {
   const router = useRouter();
 
-  // `id` from URL may be a filename (e.g. "youtube-downloader-query.js").
-  // All API calls need the real cuid. Use initialData.id when available.
-  const snippetId = initialData?.id ?? id;
-
   const [snippet, setSnippet]             = useState<Snippet | null>(initialData ?? null);
   const [loading, setLoading]             = useState(!initialData);
   const [copied, setCopied]               = useState(false);
@@ -141,7 +137,7 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
   // Like state
   const [likeCount, setLikeCount]         = useState(0);
   const [liked, setLiked]                 = useState(false);
-  const likeInFlight                       = useRef(false);
+  const [likeLoading, setLikeLoading]     = useState(false);
 
   // Comment state
   const [comments, setComments]           = useState<Comment[]>([]);
@@ -156,6 +152,7 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
 
   const [showRunModal, setShowRunModal]   = useState(false);
   const [runOutput, setRunOutput]         = useState("");
+  const [runImages, setRunImages]         = useState<{ name: string; mime: string; data: string }[]>([]);
   const [runHasError, setRunHasError]     = useState(false);
   const [runElapsed, setRunElapsed]       = useState(0);
   const [running, setRunning]             = useState(false);
@@ -168,24 +165,13 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
   const pollRef          = useRef<ReturnType<typeof setInterval> | null>(null);
   const hasTracked       = useRef(false);
   const loadingTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const commentsEndRef   = useRef<HTMLDivElement>(null);
-  const prevCommentCount = useRef(0);
   const outputRef        = useRef<HTMLDivElement | null>(null);
   const userScrolledUp   = useRef(false);
   const prevOutputLen    = useRef(0);
-  const suppressPollUntil = useRef(0); // timestamp — polling skipped until this time
-
-  // Auto-scroll to bottom when new comments arrive (from polling or own post)
-  useEffect(() => {
-    if (comments.length > prevCommentCount.current) {
-      commentsEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    }
-    prevCommentCount.current = comments.length;
-  }, [comments.length]);
 
   // Fetch current user
   useEffect(() => {
-    fetch("/api/auth/me", { credentials: "include" })
+    fetch("/api/auth/me")
       .then(r => r.json())
       .then(d => {
         setUser(d.authenticated ? { ...d.user } : null);
@@ -224,11 +210,11 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
   }, [runOutput]);
 
   const fetchSnippet = useCallback(async (silent = false) => {
-    if (!snippetId) return;
+    if (!id) return;
     const controller = new AbortController();
     const timeoutId  = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     try {
-      const r = await fetch(`/api/snippets/${snippetId}`, { signal: controller.signal, cache: "no-store" });
+      const r = await fetch(`/api/snippets/${id}`, { signal: controller.signal, cache: "no-store" });
       clearTimeout(timeoutId);
       if (!r.ok) { if (!silent) setLoading(false); return; }
       const data: Snippet = await r.json();
@@ -248,50 +234,42 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
       clearTimeout(timeoutId);
       if (!silent) setLoading(false);
     }
-  }, [snippetId]);
+  }, [id]);
 
   const fetchAttachments = useCallback(async () => {
-    if (!snippetId) return;
+    if (!id) return;
     try {
-      const r = await fetch(`/api/snippets/${snippetId}/files`, { cache: "no-store" });
+      const r = await fetch(`/api/snippets/${id}/files`, { cache: "no-store" });
       if (!r.ok) return;
       const data: GlobalFile[] = await r.json();
       setAttachments(data);
     } catch { /* silent */ }
-  }, [snippetId]);
+  }, [id]);
 
   const fetchLikes = useCallback(async () => {
-    if (!snippetId) return;
-    if (Date.now() < suppressPollUntil.current) return;
+    if (!id) return;
     try {
-      const r = await fetch(`/api/snippets/${snippetId}/like?_=${Date.now()}`, { credentials: "include" });
+      const r = await fetch(`/api/snippets/${id}/like`, { cache: "no-store" });
       if (!r.ok) return;
       const data = await r.json();
       setLikeCount(data.count ?? 0);
       setLiked(data.liked ?? false);
     } catch { /* silent */ }
-  }, [snippetId]);
+  }, [id]);
 
-  const fetchComments = useCallback(async (silent = false) => {
-    if (!snippetId) return;
-    if (silent && Date.now() < suppressPollUntil.current) return;
-    if (!silent) setCommentsLoading(true);
+  const fetchComments = useCallback(async () => {
+    if (!id) return;
     try {
-      const r = await fetch(`/api/snippets/${snippetId}/comments?_=${Date.now()}`, { credentials: "include" });
+      const r = await fetch(`/api/snippets/${id}/comments`, { cache: "no-store" });
       if (!r.ok) return;
       const data: Comment[] = await r.json();
-      // Merge: keep any temp (optimistic) comments not yet confirmed by server
-      setComments(prev => {
-        const serverIds = new Set(data.map(c => c.id));
-        const pending = prev.filter(c => c.id.startsWith("temp-") && !serverIds.has(c.id));
-        return [...data, ...pending];
-      });
+      setComments(data);
     } catch { /* silent */ }
     finally { setCommentsLoading(false); }
-  }, [snippetId]);
+  }, [id]);
 
   useEffect(() => {
-    if (!snippetId || hasTracked.current) return;
+    if (!id || hasTracked.current) return;
     hasTracked.current = true;
 
     if (!initialData) fetchSnippet(false);
@@ -320,7 +298,7 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
     }
 
     if (shouldTrackView) {
-      fetch(`/api/snippets/${snippetId}`, { method: "PATCH", credentials: "include" })
+      fetch(`/api/snippets/${id}`, { method: "PATCH" })
         .then(r => r.json())
         .then(data => {
           if (data.views !== undefined) setSnippet(prev => prev ? { ...prev, views: data.views } : prev);
@@ -330,110 +308,61 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
 
     if (initialData && !lastUpdatedAt.current) lastUpdatedAt.current = initialData.updatedAt;
 
-    // Fast poll: likes + comments every 2s (realtime feel)
     pollRef.current = setInterval(() => {
-      fetchLikes();
-      fetchComments(true);
-    }, 2000);
-
-    // Slow poll: snippet content + attachments every 5s
-    const slowPoll = setInterval(() => {
       fetchSnippet(true);
       fetchAttachments();
-    }, 5000);
-
+      fetchLikes();
+    }, 3000);
     loadingTimerRef.current = setTimeout(() => setLoading(false), FETCH_TIMEOUT_MS + 1000);
     return () => {
-      if (pollRef.current)        clearInterval(pollRef.current);
-      if (slowPoll)               clearInterval(slowPoll);
+      if (pollRef.current)       clearInterval(pollRef.current);
       if (loadingTimerRef.current) clearTimeout(loadingTimerRef.current);
     };
-  }, [fetchSnippet, fetchAttachments, fetchLikes, fetchComments, snippetId, initialData]);
+  }, [fetchSnippet, fetchAttachments, fetchLikes, fetchComments, id, initialData]);
 
   // Re-fetch likes whenever user auth changes
   useEffect(() => {
-    if (userChecked && snippetId) fetchLikes();
-  }, [userChecked, fetchLikes, snippetId]);
+    if (userChecked && id) fetchLikes();
+  }, [userChecked, fetchLikes, id]);
 
   const handleLike = async () => {
     if (!user) { router.push("/login"); return; }
-    if (likeInFlight.current || !snippet) return;
-    likeInFlight.current = true;
-    suppressPollUntil.current = Date.now() + 5000; // pause polling 5s
-
-    // Optimistic update — instant, no loading state
-    const wasLiked = liked;
-    const prevCount = likeCount;
-    setLiked(!wasLiked);
-    setLikeCount(wasLiked ? prevCount - 1 : prevCount + 1);
-
+    if (likeLoading || !snippet) return;
+    setLikeLoading(true);
     try {
-      const r = await fetch(`/api/snippets/${snippet.id}/like`, { method: "POST", credentials: "include" });
+      const r = await fetch(`/api/snippets/${snippet.id}/like`, { method: "POST" });
       if (r.ok) {
         const data = await r.json();
         setLiked(data.liked);
         setLikeCount(data.count);
-      } else {
-        setLiked(wasLiked);
-        setLikeCount(prevCount);
       }
-    } catch {
-      setLiked(wasLiked);
-      setLikeCount(prevCount);
-    } finally {
-      likeInFlight.current = false;
-    }
+    } catch { /* silent */ }
+    finally { setLikeLoading(false); }
   };
 
   const handlePostComment = async () => {
     if (!user) { router.push("/login"); return; }
     if (!commentBody.trim() || commentLoading || !snippet) return;
-
-    // Optimistic — show comment instantly with temp id
-    const tempId = `temp-${Date.now()}`;
-    const optimisticComment = {
-      id: tempId,
-      body: commentBody,
-      createdAt: new Date().toISOString(),
-      user: { username: user.username },
-      userId: user.id,
-    };
-    setComments(prev => [...prev, optimisticComment as any]);
-    const savedBody = commentBody;
-    setCommentBody("");
-    setCommentError("");
     setCommentLoading(true);
-    suppressPollUntil.current = Date.now() + 5000; // pause polling 5s
-
+    setCommentError("");
     try {
       const r = await fetch(`/api/snippets/${snippet.id}/comments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ body: savedBody }),
+        body: JSON.stringify({ body: commentBody }),
       });
       const data = await r.json();
-      if (!r.ok) {
-        setComments(prev => prev.filter(c => c.id !== tempId));
-        setCommentBody(savedBody);
-        setCommentError(data.error || "Failed to post comment");
-        return;
-      }
-      // Replace temp with real server data (no flicker — same position)
-      setComments(prev => prev.map(c => c.id === tempId ? { ...data, _confirmed: true } : c));
-    } catch {
-      setComments(prev => prev.filter(c => c.id !== tempId));
-      setCommentBody(savedBody);
-      setCommentError("Something went wrong");
-    } finally {
-      setCommentLoading(false);
-    }
+      if (!r.ok) { setCommentError(data.error || "Failed to post comment"); return; }
+      setComments(prev => [...prev, data]);
+      setCommentBody("");
+    } catch { setCommentError("Something went wrong"); }
+    finally { setCommentLoading(false); }
   };
 
   const handleDeleteComment = async (commentId: string) => {
     if (!user) return;
     try {
-      const r = await fetch(`/api/comments/${commentId}`, { method: "DELETE", credentials: "include" });
+      const r = await fetch(`/api/comments/${commentId}`, { method: "DELETE" });
       if (r.ok) setComments(prev => prev.filter(c => c.id !== commentId));
     } catch { /* silent */ }
   };
@@ -456,7 +385,7 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
 
   const handleRun = async () => {
     if (!snippet) return;
-    setRunOutput(""); setRunHasError(false); setRunElapsed(0);
+    setRunOutput(""); setRunImages([]); setRunHasError(false); setRunElapsed(0);
     setShowRunModal(true); setRunning(true);
     const abortCtrl = new AbortController();
     runAbortRef.current = abortCtrl;
@@ -487,6 +416,8 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
               setRunElapsed(ev.elapsed || 0);
               setRunHasError(ev.hasError || false);
               setRunning(false);
+            } else if (ev.type === "image") {
+              setRunImages(prev => [...prev, { name: ev.name, mime: ev.mime, data: ev.data }]);
             } else {
               setRunOutput(prev => prev ? prev + "\n" + ev.text : ev.text);
               if (ev.type === "error") setRunHasError(true);
@@ -707,6 +638,7 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 32 }}>
             <button
               onClick={handleLike}
+              disabled={likeLoading}
               title={user ? (liked ? "Unlike" : "Like this snippet") : "Sign in to like"}
               style={{
                 display: "flex", alignItems: "center", gap: 8,
@@ -714,7 +646,7 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
                 border: `2.5px solid ${liked ? "var(--red)" : "var(--border-color)"}`,
                 background: liked ? "rgba(242,92,84,0.1)" : "var(--surface)",
                 color: liked ? "var(--red)" : "var(--text-muted)",
-                cursor: "pointer",
+                cursor: likeLoading ? "wait" : "pointer",
                 fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700,
                 boxShadow: liked ? "3px 3px 0 var(--red)" : "3px 3px 0 var(--border-color)",
                 transition: "all .15s", letterSpacing: "0.04em",
@@ -862,7 +794,6 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
                     </p>
                   </div>
                 ))}
-                <div ref={commentsEndRef} />
               </div>
             )}
           </div>
@@ -902,6 +833,12 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
                 {running && (
                   <span style={{ display: "inline-block", width: 8, height: 14, background: "#4ade80", marginLeft: 2, verticalAlign: "text-bottom", animation: "blink 1s step-end infinite" }} />
                 )}
+                {runImages.map((img, i) => (
+                  <div key={i} style={{ marginTop: 12 }}>
+                    <div style={{ fontSize: 10, color: "var(--text-faint)", marginBottom: 4, letterSpacing: "0.05em" }}>📎 {img.name}</div>
+                    <img src={`data:${img.mime};base64,${img.data}`} alt={img.name} style={{ maxWidth: "100%", maxHeight: 400, borderRadius: 8, border: "1.5px solid var(--border-color)", display: "block" }} />
+                  </div>
+                ))}
               </div>
               {running && (
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>Running on server...</div>

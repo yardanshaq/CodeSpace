@@ -91,12 +91,10 @@ const MODULE_MAP: Record<string, unknown> = {
   "assert": require("assert")
 };
 
-// createRequire: use a fixed known path that webpack can resolve at build time.
-// Avoid referencing __filename directly — webpack in Next.js App Router
-// cannot statically parse it and emits a "module.createRequire failed" warning.
-const projectRequire = createRequire(
-  path.join(process.cwd(), "package.json")
-);
+// createRequire: use a JS file path so webpack does not error
+const _requireBase = (typeof __filename !== "undefined" ? __filename : null)
+  ?? path.join(process.cwd(), "node_modules", "next", "dist", "server", "app-render", "work-unit-async-storage.external.js");
+const projectRequire = createRequire(_requireBase);
 
 
 // Collect sensitive env values once at server start — not per-request
@@ -460,7 +458,7 @@ export async function POST(req: NextRequest) {
               argv: [],
               version: process.version,
               platform: process.platform,
-              cwd: () => "/sandbox",
+              cwd: () => tempDir,  // return real tempDir so path.join(process.cwd(), ...) resolves correctly
               exit: (c?: number) => { logs.push(`[process.exit(${c ?? 0}) called]`); throw new Error("__EXIT__"); },
               stdout: { write: (s: string) => { const t = sanitizeOutput(s); logs.push(t); sendEvent({ type: "log", text: t }); return true; } },
               stderr: { write: (s: string) => { const t = sanitizeOutput(s); errors.push(t); sendEvent({ type: "error", text: t }); return true; } },
@@ -521,6 +519,8 @@ export async function POST(req: NextRequest) {
             // Block eval and Function constructor — primary sandbox escape vectors
             eval: undefined,
             Function: undefined,
+            // Signal injected by runner — called when wrappedCode outer async completes
+            __signalDone__: () => {},  // placeholder, replaced below
           };
           sandbox.global = sandbox;
           sandbox.globalThis = sandbox;
@@ -531,6 +531,14 @@ export async function POST(req: NextRequest) {
           vm.createContext(sandbox);
 
           const autoAwaitLastCall = (src: string): string => {
+            // First: add await to all un-awaited (async () => { ... })() patterns
+            // This ensures top-level async IIFEs (common pattern) are properly awaited
+            src = src.replace(
+              /(?<!await\s)\(async\s*(?:function\s*\w*)?\s*\(/g,
+              "await (async ("
+            );
+
+            // Then: add await to the last bare function call if not already awaited
             const lines = src.split("\n");
             for (let i = lines.length - 1; i >= 0; i--) {
               const trimmed = lines[i].trim();
@@ -568,6 +576,8 @@ ${processedCode}
       }
     }
     console.error('RuntimeError: ' + msg + location);
+  } finally {
+    if (typeof __signalDone__ === 'function') __signalDone__();
   }
 })();
 `;
@@ -575,31 +585,50 @@ ${processedCode}
           const TIMEOUT_MS = 200000;
           const deadline = Date.now() + TIMEOUT_MS;
 
+          // Create a native Promise that resolves when the VM's outer async IIFE completes
+          // (including all awaited inner operations like network calls, file writes)
+          let __vmDoneResolve__: () => void;
+          const __vmDone__ = new NativePromise<void>(r => { __vmDoneResolve__ = r; });
+          sandbox.__signalDone__ = __vmDoneResolve__!;
+
           try {
             const script = new vm.Script(wrappedCode, { filename: "snippet.js" });
             const result = script.runInContext(sandbox);
 
-            if (result && typeof (result as Promise<unknown>).then === "function") {
-              await NativePromise.race([
-                result as Promise<unknown>,
-                new NativePromise<void>((_, reject) =>
-                  setTimeout(() => reject(new Error("Execution timed out after 200 seconds")), deadline - Date.now())
-                ),
-              ]);
-            }
+            // Wait for VM async completion signal (or timeout)
+            await NativePromise.race([
+              __vmDone__,
+              new NativePromise<void>((_, reject) =>
+                setTimeout(() => reject(new Error("Execution timed out after 200 seconds")), deadline - Date.now())
+              ),
+            ]);
 
-            // Wait briefly for any still-running async ops (setTimeout, etc.)
+            // Wait briefly for any late setTimeout callbacks after async completion
             let lastCount = logs.length + errors.length;
+            let lastFileCount = 0;
             let stableRounds = 0;
             while (Date.now() < deadline) {
               await new NativePromise<void>(r => setTimeout(r, 80));
               const current = logs.length + errors.length;
-              if (current === lastCount) {
+              // Also count new image files as "activity"
+              let fileCount = 0;
+              try {
+                const IMAGE_EXTS_WAIT = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp"]);
+                for (const fname of fs.readdirSync(tempDir)) {
+                  if (!IMAGE_EXTS_WAIT.has(path.extname(fname).toLowerCase())) continue;
+                  try {
+                    const st = fs.statSync(path.join(tempDir, fname));
+                    if (st.mtimeMs >= startTime) fileCount++;
+                  } catch { /* skip */ }
+                }
+              } catch { /* skip */ }
+              if (current === lastCount && fileCount === lastFileCount) {
                 stableRounds++;
                 if (stableRounds >= 3) break;
               } else {
                 stableRounds = 0;
                 lastCount = current;
+                lastFileCount = fileCount;
               }
             }
           } catch (e: unknown) {
@@ -615,6 +644,30 @@ ${processedCode}
           if (logs.length === 0 && errors.length === 0) {
             sendEvent({ type: "log", text: "// Code executed successfully with no console output." });
           }
+
+          // Scan tempDir for image files written during THIS run (mtime >= startTime)
+          try {
+            const IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp"]);
+            for (const fname of fs.readdirSync(tempDir)) {
+              const ext = path.extname(fname).toLowerCase();
+              if (!IMAGE_EXTS.has(ext)) continue;
+              try {
+                const fpath = path.join(tempDir, fname);
+                const stat  = fs.statSync(fpath);
+                if (stat.mtimeMs < startTime) continue;
+                if (stat.size > 10 * 1024 * 1024) continue;
+                const buf  = fs.readFileSync(fpath);
+                const mime = ext === ".svg" ? "image/svg+xml"
+                  : ext === ".jpg" || ext === ".jpeg" ? "image/jpeg"
+                  : ext === ".gif" ? "image/gif"
+                  : ext === ".webp" ? "image/webp"
+                  : ext === ".bmp" ? "image/bmp"
+                  : "image/png";
+                sendEvent({ type: "image", name: fname, mime, data: buf.toString("base64") });
+              } catch { /* skip unreadable */ }
+            }
+          } catch { /* skip scan errors */ }
+
           sendEvent({ type: "done", elapsed, hasError: errors.length > 0 });
 
         } catch (e: unknown) {

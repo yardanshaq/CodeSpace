@@ -101,6 +101,7 @@ export default function PostPage() {
   const [editSnippet, setEditSnippet] = useState<Snippet | null>(null);
   const [runSnippet, setRunSnippet]   = useState<Snippet | null>(null);
   const [runOutput, setRunOutput]     = useState("");
+  const [runImages, setRunImages]     = useState<{ name: string; mime: string; data: string }[]>([]);
   const [runHasError, setRunHasError] = useState(false);
   const [runElapsed, setRunElapsed]   = useState(0);
   const [running, setRunning]         = useState(false);
@@ -134,7 +135,7 @@ export default function PostPage() {
   useEffect(() => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
-    fetch("/api/auth/me", { signal: controller.signal, credentials: "include" })
+    fetch("/api/auth/me", { signal: controller.signal })
       .then(r => r.json())
       .then(data => {
         if (!data.authenticated) { setCachedUser(null); setLoading(false); router.replace("/login"); return; }
@@ -150,7 +151,7 @@ export default function PostPage() {
   const fetchSnippets = useCallback(async (silent = false) => {
     if (!silent) setSnippetsLoading(true);
     try {
-      const res  = await fetch(`/api/snippets?adminView=true&_=${Date.now()}`, { credentials: "include" });
+      const res  = await fetch(`/api/snippets?adminView=true&_=${Date.now()}`);
       const data = await res.json();
       if (!Array.isArray(data)) return;
       if (!silent) {
@@ -252,7 +253,6 @@ export default function PostPage() {
       const res  = await fetch("/api/snippets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({ ...form, isPublic: isMember ? true : form.isPublic }),
       });
       const data = await res.json();
@@ -271,7 +271,6 @@ export default function PostPage() {
           fd.append("file", file);
           const xhr = new XMLHttpRequest();
           xhr.open("POST", `/api/snippets/${snippetId}/files`);
-          xhr.withCredentials = true;
           xhr.upload.onprogress = (ev) => {
             if (ev.lengthComputable)
               setCreateUploadProgress({ current: i + 1, total, pct: Math.round((ev.loaded / ev.total) * 100) });
@@ -312,7 +311,6 @@ export default function PostPage() {
     const res  = await fetch(`/api/snippets/${editSnippet.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
       body: JSON.stringify({ ...form, isPublic: isMember ? true : form.isPublic }),
     });
     const data = await res.json();
@@ -328,7 +326,7 @@ export default function PostPage() {
   const handleDeleteSnippet = async (id: string) => {
     showConfirm("DELETE SNIPPET", "This snippet will be permanently deleted. This action cannot be undone.", async () => {
       closeConfirm();
-      const res = await fetch(`/api/snippets/${id}`, { method: "DELETE", credentials: "include" });
+      const res = await fetch(`/api/snippets/${id}`, { method: "DELETE" });
       if (res.ok) fetchSnippets(true);
     });
   };
@@ -370,7 +368,6 @@ export default function PostPage() {
     fd.append("file", file);
     const xhr = new XMLHttpRequest();
     xhr.open("POST", `/api/snippets/${editSnippet.id}/files`);
-    xhr.withCredentials = true;
     xhr.upload.onprogress = (ev) => {
       if (ev.lengthComputable) setUploadProgress(Math.round((ev.loaded / ev.total) * 100));
     };
@@ -399,7 +396,6 @@ export default function PostPage() {
       const res = await fetch(`/api/snippets/${editSnippet!.id}/files`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({ fileId }),
       });
       if (res.ok) setEditFiles(prev => prev.filter(f => f.id !== fileId));
@@ -425,7 +421,7 @@ export default function PostPage() {
   };
 
   const handleRun = async (s: Snippet) => {
-    setRunSnippet(s); setRunOutput(""); setRunHasError(false);
+    setRunSnippet(s); setRunOutput(""); setRunImages([]); setRunHasError(false);
     setRunElapsed(0); setCopiedOutput(false); setRunning(true); setShowRunModal(true);
     const abortCtrl = new AbortController();
     runAbortRef.current = abortCtrl;
@@ -452,6 +448,7 @@ export default function PostPage() {
           try {
             const ev = JSON.parse(dataLine.slice(6));
             if (ev.type === "done") { setRunElapsed(ev.elapsed || 0); setRunHasError(ev.hasError || false); setRunning(false); }
+            else if (ev.type === "image") { setRunImages(prev => [...prev, { name: ev.name, mime: ev.mime, data: ev.data }]); }
             else { setRunOutput(prev => prev ? prev + "\n" + ev.text : ev.text); if (ev.type === "error") setRunHasError(true); }
           } catch { /* skip malformed */ }
         }
@@ -829,6 +826,12 @@ export default function PostPage() {
               <div ref={outputRef} className="run-output" style={{ color: runHasError ? "#ff6b6b" : "#4ade80", position: "relative", overflowY: "auto" }}>
                 {runOutput || (running ? "" : "// No output")}
                 {running && <span style={{ display: "inline-block", width: 8, height: 14, background: "#4ade80", marginLeft: 2, verticalAlign: "text-bottom", animation: "blink 1s step-end infinite" }} />}
+                {runImages.map((img, i) => (
+                  <div key={i} style={{ marginTop: 12 }}>
+                    <div style={{ fontSize: 10, color: "var(--text-faint)", marginBottom: 4, letterSpacing: "0.05em" }}>📎 {img.name}</div>
+                    <img src={`data:${img.mime};base64,${img.data}`} alt={img.name} style={{ maxWidth: "100%", maxHeight: 400, borderRadius: 8, border: "1.5px solid var(--border-color)", display: "block" }} />
+                  </div>
+                ))}
               </div>
               {running  && <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>Running on server...</div>}
               {!running && runElapsed > 0 && <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>Executed in {runElapsed}ms</div>}
