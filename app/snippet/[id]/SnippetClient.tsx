@@ -350,36 +350,74 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
   const handleLike = async () => {
     if (!user) { router.push("/login"); return; }
     if (likeLoading || !snippet) return;
+
+    // Optimistic update — UI changes instantly
+    const wasLiked = liked;
+    const prevCount = likeCount;
+    setLiked(!wasLiked);
+    setLikeCount(wasLiked ? prevCount - 1 : prevCount + 1);
+
     setLikeLoading(true);
     try {
       const r = await fetch(`/api/snippets/${snippet.id}/like`, { method: "POST", credentials: "include" });
       if (r.ok) {
         const data = await r.json();
+        // Sync with server value
         setLiked(data.liked);
         setLikeCount(data.count);
+      } else {
+        // Revert on failure
+        setLiked(wasLiked);
+        setLikeCount(prevCount);
       }
-    } catch { /* silent */ }
+    } catch {
+      setLiked(wasLiked);
+      setLikeCount(prevCount);
+    }
     finally { setLikeLoading(false); }
   };
 
   const handlePostComment = async () => {
     if (!user) { router.push("/login"); return; }
     if (!commentBody.trim() || commentLoading || !snippet) return;
-    setCommentLoading(true);
+
+    // Optimistic update — show comment instantly
+    const tempId = `temp-${Date.now()}`;
+    const optimisticComment = {
+      id: tempId,
+      body: commentBody,
+      createdAt: new Date().toISOString(),
+      user: { username: user.username },
+      userId: user.id,
+    };
+    setComments(prev => [...prev, optimisticComment as any]);
+    const savedBody = commentBody;
+    setCommentBody("");
     setCommentError("");
+    setCommentLoading(true);
+
     try {
       const r = await fetch(`/api/snippets/${snippet.id}/comments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ body: commentBody }),
+        body: JSON.stringify({ body: savedBody }),
       });
       const data = await r.json();
-      if (!r.ok) { setCommentError(data.error || "Failed to post comment"); return; }
-      setCommentBody("");
-      // Re-fetch full comments list to ensure sync with server
-      await fetchComments();
-    } catch { setCommentError("Something went wrong"); }
+      if (!r.ok) {
+        // Revert optimistic comment on failure
+        setComments(prev => prev.filter(c => c.id !== tempId));
+        setCommentBody(savedBody);
+        setCommentError(data.error || "Failed to post comment");
+        return;
+      }
+      // Replace temp comment with real one from server
+      setComments(prev => prev.map(c => c.id === tempId ? data : c));
+    } catch {
+      setComments(prev => prev.filter(c => c.id !== tempId));
+      setCommentBody(savedBody);
+      setCommentError("Something went wrong");
+    }
     finally { setCommentLoading(false); }
   };
 
