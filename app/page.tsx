@@ -162,13 +162,13 @@ export default function HomePage() {
   }, [search, selectedAuthors, selectedCategories, sortBy, order]);
 
   useEffect(() => {
-    const timer = setTimeout(() => fetchSnippets(false), 300);
+    const timer = setTimeout(() => fetchSnippets(false), 500);
     return () => clearTimeout(timer);
   }, [fetchSnippets]);
 
   useEffect(() => {
     if (pollRef.current) clearInterval(pollRef.current);
-    pollRef.current = setInterval(() => fetchSnippets(true), 3000);
+    pollRef.current = setInterval(() => fetchSnippets(true), 10000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [fetchSnippets]);
 

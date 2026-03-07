@@ -151,7 +151,7 @@ export default function PostPage() {
   const fetchSnippets = useCallback(async (silent = false) => {
     if (!silent) setSnippetsLoading(true);
     try {
-      const res  = await fetch(`/api/snippets?adminView=true&_=${Date.now()}`);
+      const res  = await fetch(`/api/snippets?adminView=true`);
       const data = await res.json();
       if (!Array.isArray(data)) return;
       if (!silent) {
@@ -192,7 +192,7 @@ export default function PostPage() {
   useEffect(() => {
     if (user) {
       fetchSnippets(false);
-      pollRef.current = setInterval(() => fetchSnippets(true), 3000);
+      pollRef.current = setInterval(() => fetchSnippets(true), 10000);
     }
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [user, fetchSnippets]);

@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import PageLoader from "@/components/PageLoader";
+import { getCachedUser, setCachedUser } from "@/lib/authCache";
 
 interface User {
   id: string;
@@ -14,7 +15,7 @@ interface User {
 export default function SettingsPage() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!getCachedUser());
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newUsername, setNewUsername] = useState("");
@@ -27,15 +28,15 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    const cached = getCachedUser();
+    if (cached) { setUser(cached as User); setNewUsername(cached.username); setLoading(false); }
     fetch("/api/auth/me")
       .then((r) => r.json())
       .then((data) => {
-        if (!data.authenticated) { router.push("/login"); return; }
-        setUser(data.user);
+        if (!data.authenticated) { setCachedUser(null); router.push("/login"); return; }
+        setUser(data.user); setCachedUser(data.user);
         setNewUsername(data.user.username);
-        setTimeout(() => {
-          setLoading(false);
-        }, 1500);
+        setLoading(false);
       })
       .catch(() => router.push("/login"));
   }, [router]);

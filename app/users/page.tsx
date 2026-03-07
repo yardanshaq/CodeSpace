@@ -48,7 +48,7 @@ export default function UsersPage() {
 
   useEffect(() => {
     fetchAdmins(false);
-    pollRef.current = setInterval(() => fetchAdmins(true), 3000);
+    pollRef.current = setInterval(() => fetchAdmins(true), 15000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [fetchAdmins]);
 

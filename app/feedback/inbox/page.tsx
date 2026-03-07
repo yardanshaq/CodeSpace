@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
+import { getCachedUser, setCachedUser } from "@/lib/authCache";
 import PageLoader from "@/components/PageLoader";
 
 interface FeedbackItem {
@@ -39,15 +40,16 @@ export default function FeedbackInboxPage() {
 
   // ── Auth guard: SUPERADMIN only ───────────────────────────────────────────
   useEffect(() => {
+    // Fast pre-check from cache
+    const cached = getCachedUser();
+    if (cached && cached.role !== "SUPERADMIN") { router.replace("/"); return; }
     fetch("/api/auth/me")
       .then(r => r.json())
       .then(d => {
         if (!d.authenticated || d.user.role !== "SUPERADMIN") {
-          router.replace("/");
-          return;
+          setCachedUser(null); router.replace("/"); return;
         }
-        setAuthorized(true);
-        setAuthChecked(true);
+        setCachedUser(d.user); setAuthorized(true); setAuthChecked(true);
       })
       .catch(() => router.replace("/"));
   }, []);

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
+import { getCachedUser, setCachedUser } from "@/lib/authCache";
 
 interface NavUser {
   username: string;
@@ -40,9 +41,11 @@ export default function FeedbackPage() {
   const MAX = 5000;
 
   useEffect(() => {
+    const cached = getCachedUser();
+    if (cached) { setUser(cached); }
     fetch("/api/auth/me")
       .then(r => r.json())
-      .then(d => { setUser(d.authenticated ? d.user : null); setUserChecked(true); })
+      .then(d => { const u = d.authenticated ? d.user : null; setUser(u); setCachedUser(u); setUserChecked(true); })
       .catch(() => { setUser(null); setUserChecked(true); });
   }, []);
 
