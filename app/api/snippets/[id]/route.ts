@@ -78,7 +78,10 @@ export async function PATCH(
     }
     const updated = await prisma.snippet.update({
       where: { id: snippet.id },
-      data: { views: { increment: 1 } },
+      data: {
+        views: { increment: 1 },
+        updatedAt: snippet.updatedAt, // preserve — views increment should not affect "last edited" timestamp
+      },
       select: { views: true },
     });
     return NextResponse.json({ views: updated.views });
