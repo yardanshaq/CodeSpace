@@ -42,7 +42,7 @@ export const metadata: Metadata = {
       { url: "https://cdn.nekohime.site/file/dtbHw_6g.png", sizes: "32x32", type: "image/png" },
     ],
     apple: [
-      { url: "https://cdn.nekohime.site/file/9Xs_b6Rk.png", sizes: "180x180" },
+      { url: "https://cdn.nekohime.site/file/E4zGn2Ro.png", sizes: "180x180" },
     ],
   },
   alternates: {
