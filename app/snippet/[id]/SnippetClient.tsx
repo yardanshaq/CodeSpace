@@ -141,7 +141,7 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
   // Like state
   const [likeCount, setLikeCount]         = useState(0);
   const [liked, setLiked]                 = useState(false);
-  const [likeLoading, setLikeLoading]     = useState(false);
+  const likeInFlight                       = useRef(false);
 
   // Comment state
   const [comments, setComments]           = useState<Comment[]>([]);
@@ -277,7 +277,12 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
       const r = await fetch(`/api/snippets/${snippetId}/comments?_=${Date.now()}`, { credentials: "include" });
       if (!r.ok) return;
       const data: Comment[] = await r.json();
-      setComments(data);
+      // Merge: keep any temp (optimistic) comments not yet confirmed by server
+      setComments(prev => {
+        const serverIds = new Set(data.map(c => c.id));
+        const pending = prev.filter(c => c.id.startsWith("temp-") && !serverIds.has(c.id));
+        return [...data, ...pending];
+      });
     } catch { /* silent */ }
     finally { setCommentsLoading(false); }
   }, [snippetId]);
@@ -349,39 +354,38 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
 
   const handleLike = async () => {
     if (!user) { router.push("/login"); return; }
-    if (likeLoading || !snippet) return;
+    if (likeInFlight.current || !snippet) return;
+    likeInFlight.current = true;
 
-    // Optimistic update — UI changes instantly
+    // Optimistic update — instant, no loading state
     const wasLiked = liked;
     const prevCount = likeCount;
     setLiked(!wasLiked);
     setLikeCount(wasLiked ? prevCount - 1 : prevCount + 1);
 
-    setLikeLoading(true);
     try {
       const r = await fetch(`/api/snippets/${snippet.id}/like`, { method: "POST", credentials: "include" });
       if (r.ok) {
         const data = await r.json();
-        // Sync with server value
         setLiked(data.liked);
         setLikeCount(data.count);
       } else {
-        // Revert on failure
         setLiked(wasLiked);
         setLikeCount(prevCount);
       }
     } catch {
       setLiked(wasLiked);
       setLikeCount(prevCount);
+    } finally {
+      likeInFlight.current = false;
     }
-    finally { setLikeLoading(false); }
   };
 
   const handlePostComment = async () => {
     if (!user) { router.push("/login"); return; }
     if (!commentBody.trim() || commentLoading || !snippet) return;
 
-    // Optimistic update — show comment instantly
+    // Optimistic — show comment instantly with temp id
     const tempId = `temp-${Date.now()}`;
     const optimisticComment = {
       id: tempId,
@@ -405,20 +409,20 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
       });
       const data = await r.json();
       if (!r.ok) {
-        // Revert optimistic comment on failure
         setComments(prev => prev.filter(c => c.id !== tempId));
         setCommentBody(savedBody);
         setCommentError(data.error || "Failed to post comment");
         return;
       }
-      // Replace temp comment with real one from server
-      setComments(prev => prev.map(c => c.id === tempId ? data : c));
+      // Replace temp with real server data (no flicker — same position)
+      setComments(prev => prev.map(c => c.id === tempId ? { ...data, _confirmed: true } : c));
     } catch {
       setComments(prev => prev.filter(c => c.id !== tempId));
       setCommentBody(savedBody);
       setCommentError("Something went wrong");
+    } finally {
+      setCommentLoading(false);
     }
-    finally { setCommentLoading(false); }
   };
 
   const handleDeleteComment = async (commentId: string) => {
@@ -698,7 +702,6 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 32 }}>
             <button
               onClick={handleLike}
-              disabled={likeLoading}
               title={user ? (liked ? "Unlike" : "Like this snippet") : "Sign in to like"}
               style={{
                 display: "flex", alignItems: "center", gap: 8,
@@ -706,7 +709,7 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
                 border: `2.5px solid ${liked ? "var(--red)" : "var(--border-color)"}`,
                 background: liked ? "rgba(242,92,84,0.1)" : "var(--surface)",
                 color: liked ? "var(--red)" : "var(--text-muted)",
-                cursor: likeLoading ? "wait" : "pointer",
+                cursor: "pointer",
                 fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700,
                 boxShadow: liked ? "3px 3px 0 var(--red)" : "3px 3px 0 var(--border-color)",
                 transition: "all .15s", letterSpacing: "0.04em",
