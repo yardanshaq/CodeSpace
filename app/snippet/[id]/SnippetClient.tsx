@@ -272,41 +272,13 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
     finally { setCommentsLoading(false); }
   }, [id]);
 
-  // Bundle fetch: 1 request = snippet + likes + comments + files
-  // withAuth: true = kirim credentials (after userChecked), false = skip liked check
-  const fetchBundle = useCallback(async (withAuth = false) => {
-    if (!id) return;
-    try {
-      const r = await fetch(`/api/snippets/${id}/bundle`, {
-        cache: "no-store",
-        credentials: withAuth ? "include" : "omit",
-      });
-      if (!r.ok) { setLoading(false); setCommentsLoading(false); return; }
-      const data = await r.json();
-      setSnippet(data.snippet);
-      lastUpdatedAt.current = data.snippet?.updatedAt ?? null;
-      setAttachments(data.files ?? []);
-      setLikeCount(data.likeCount ?? 0);
-      if (withAuth) setLiked(data.liked ?? false);
-      setComments(data.comments ?? []);
-      setCommentsLoading(false);
-      setLoading(false);
-    } catch {
-      setLoading(false);
-      setCommentsLoading(false);
-    }
-  }, [id]);
-
-  // After auth confirmed, re-fetch bundle WITH credentials to get correct liked status
-  useEffect(() => {
-    if (userChecked && id) fetchBundle(true);
-  }, [userChecked, fetchBundle, id]);
-
   useEffect(() => {
     if (!id || hasTracked.current) return;
     hasTracked.current = true;
 
-    fetchBundle(false); // immediate load without auth (fast)
+    if (!initialData) fetchSnippet(false);
+    fetchAttachments();
+    fetchComments();
 
     let shouldTrackView = false;
     try {
@@ -337,16 +309,22 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
         .catch(() => {});
     }
 
-    // Only poll snippet for view/code changes — likes optimistic, comments via bundle
+    if (initialData && !lastUpdatedAt.current) lastUpdatedAt.current = initialData.updatedAt;
+
     pollRef.current = setInterval(() => {
       fetchSnippet(true);
-    }, 10000);
+    }, 8000);
     loadingTimerRef.current = setTimeout(() => setLoading(false), FETCH_TIMEOUT_MS + 1000);
     return () => {
       if (pollRef.current)       clearInterval(pollRef.current);
       if (loadingTimerRef.current) clearTimeout(loadingTimerRef.current);
     };
-  }, [fetchBundle, fetchSnippet, id]);
+  }, [fetchSnippet, fetchAttachments, fetchComments, id, initialData]);
+
+  // Re-fetch likes after auth confirmed (ensures cookie sent)
+  useEffect(() => {
+    if (userChecked && id) fetchLikes();
+  }, [userChecked, fetchLikes, id]);
 
   const handleLike = async () => {
     if (!user) { router.push("/login"); return; }
