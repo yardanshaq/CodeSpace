@@ -173,6 +173,7 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
   const outputRef        = useRef<HTMLDivElement | null>(null);
   const userScrolledUp   = useRef(false);
   const prevOutputLen    = useRef(0);
+  const suppressPollUntil = useRef(0); // timestamp — polling skipped until this time
 
   // Auto-scroll to bottom when new comments arrive (from polling or own post)
   useEffect(() => {
@@ -261,6 +262,7 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
 
   const fetchLikes = useCallback(async () => {
     if (!snippetId) return;
+    if (Date.now() < suppressPollUntil.current) return;
     try {
       const r = await fetch(`/api/snippets/${snippetId}/like?_=${Date.now()}`, { credentials: "include" });
       if (!r.ok) return;
@@ -272,6 +274,7 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
 
   const fetchComments = useCallback(async (silent = false) => {
     if (!snippetId) return;
+    if (silent && Date.now() < suppressPollUntil.current) return;
     if (!silent) setCommentsLoading(true);
     try {
       const r = await fetch(`/api/snippets/${snippetId}/comments?_=${Date.now()}`, { credentials: "include" });
@@ -356,6 +359,7 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
     if (!user) { router.push("/login"); return; }
     if (likeInFlight.current || !snippet) return;
     likeInFlight.current = true;
+    suppressPollUntil.current = Date.now() + 5000; // pause polling 5s
 
     // Optimistic update — instant, no loading state
     const wasLiked = liked;
@@ -399,6 +403,7 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
     setCommentBody("");
     setCommentError("");
     setCommentLoading(true);
+    suppressPollUntil.current = Date.now() + 5000; // pause polling 5s
 
     try {
       const r = await fetch(`/api/snippets/${snippet.id}/comments`, {
