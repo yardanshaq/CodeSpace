@@ -164,8 +164,10 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
   const lastUpdatedAt    = useRef<string | null>(null);
   const pollRef          = useRef<ReturnType<typeof setInterval> | null>(null);
   const hasTracked       = useRef(false);
-  const loadingTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const outputRef        = useRef<HTMLDivElement | null>(null);
+  const loadingTimerRef      = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const suppressLikeUntil    = useRef<number>(0);
+  const suppressCommentUntil = useRef<number>(0);
+  const outputRef            = useRef<HTMLDivElement | null>(null);
   const userScrolledUp   = useRef(false);
   const prevOutputLen    = useRef(0);
 
@@ -246,10 +248,11 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
     } catch { /* silent */ }
   }, [id]);
 
-  const fetchLikes = useCallback(async () => {
+  const fetchLikes = useCallback(async (fromPoll = false) => {
     if (!id) return;
+    if (fromPoll && Date.now() < suppressLikeUntil.current) return;
     try {
-      const r = await fetch(`/api/snippets/${id}/like`, { cache: "no-store" });
+      const r = await fetch(`/api/snippets/${id}/like`, { cache: "no-store", credentials: "include" });
       if (!r.ok) return;
       const data = await r.json();
       setLikeCount(data.count ?? 0);
@@ -257,10 +260,11 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
     } catch { /* silent */ }
   }, [id]);
 
-  const fetchComments = useCallback(async () => {
+  const fetchComments = useCallback(async (fromPoll = false) => {
     if (!id) return;
+    if (fromPoll && Date.now() < suppressCommentUntil.current) return;
     try {
-      const r = await fetch(`/api/snippets/${id}/comments`, { cache: "no-store" });
+      const r = await fetch(`/api/snippets/${id}/comments`, { cache: "no-store", credentials: "include" });
       if (!r.ok) return;
       const data: Comment[] = await r.json();
       setComments(data);
@@ -274,7 +278,7 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
 
     if (!initialData) fetchSnippet(false);
     fetchAttachments();
-    fetchLikes();
+    // fetchLikes is called by the userChecked effect after auth is confirmed
     fetchComments();
 
     let shouldTrackView = false;
@@ -311,7 +315,7 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
     pollRef.current = setInterval(() => {
       fetchSnippet(true);
       fetchAttachments();
-      fetchLikes();
+      fetchLikes(true);
     }, 3000);
     loadingTimerRef.current = setTimeout(() => setLoading(false), FETCH_TIMEOUT_MS + 1000);
     return () => {
@@ -328,6 +332,14 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
   const handleLike = async () => {
     if (!user) { router.push("/login"); return; }
     if (likeLoading || !snippet) return;
+
+    // Optimistic update immediately
+    const wasLiked = liked;
+    const prevCount = likeCount;
+    setLiked(!wasLiked);
+    setLikeCount(c => wasLiked ? c - 1 : c + 1);
+    suppressLikeUntil.current = Date.now() + 5000;
+
     setLikeLoading(true);
     try {
       const r = await fetch(`/api/snippets/${snippet.id}/like`, { method: "POST" });
@@ -335,27 +347,63 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
         const data = await r.json();
         setLiked(data.liked);
         setLikeCount(data.count);
+        suppressLikeUntil.current = Date.now() + 5000;
+      } else {
+        // Rollback on error
+        setLiked(wasLiked);
+        setLikeCount(prevCount);
+        suppressLikeUntil.current = 0;
       }
-    } catch { /* silent */ }
+    } catch {
+      setLiked(wasLiked);
+      setLikeCount(prevCount);
+      suppressLikeUntil.current = 0;
+    }
     finally { setLikeLoading(false); }
   };
 
   const handlePostComment = async () => {
     if (!user) { router.push("/login"); return; }
     if (!commentBody.trim() || commentLoading || !snippet) return;
+
+    // Optimistic: append immediately with temp id
+    const tempComment: Comment = {
+      id:        `temp-${Date.now()}`,
+      body:      commentBody.trim(),
+      createdAt: new Date().toISOString(),
+      user:      { username: user.username, role: user.role },
+    };
+    const body = commentBody.trim();
+    setComments(prev => [...prev, tempComment]);
+    setCommentBody("");
+    suppressCommentUntil.current = Date.now() + 8000;
+
     setCommentLoading(true);
     setCommentError("");
     try {
       const r = await fetch(`/api/snippets/${snippet.id}/comments`, {
-        method: "POST",
+        method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body: commentBody }),
+        body:    JSON.stringify({ body }),
       });
       const data = await r.json();
-      if (!r.ok) { setCommentError(data.error || "Failed to post comment"); return; }
-      setComments(prev => [...prev, data]);
-      setCommentBody("");
-    } catch { setCommentError("Something went wrong"); }
+      if (!r.ok) {
+        // Rollback temp comment
+        setComments(prev => prev.filter(c => c.id !== tempComment.id));
+        setCommentBody(body);
+        setCommentError(data.error || "Failed to post comment");
+        suppressCommentUntil.current = 0;
+        return;
+      }
+      // Replace temp with real comment from server
+      setComments(prev => prev.map(c => c.id === tempComment.id ? data : c));
+      suppressCommentUntil.current = Date.now() + 5000;
+    } catch {
+      setComments(prev => prev.filter(c => c.id !== tempComment.id));
+      setCommentBody(body);
+      setCommentError("Something went wrong");
+      suppressCommentUntil.current = 0;
+    }
     finally { setCommentLoading(false); }
   };
 
