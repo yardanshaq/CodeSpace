@@ -44,11 +44,20 @@ export async function generateMetadata({
         url:         `${BASE_URL}/code?v=${snippet.filename}`,
         siteName:    "CodeSpace",
         type:        "website",
+        images: [
+          {
+            url:    "https://cdn.nekohime.site/file/E_fVqMJ-.png",
+            width:  1280,
+            height: 640,
+            alt:    "CodeSpace Cover",
+          },
+        ],
       },
       twitter: {
-        card:        "summary",
+        card:        "summary_large_image",
         title:       snippet.title,
         description: desc,
+        images:      ["https://cdn.nekohime.site/file/E_fVqMJ-.png"],
       },
     };
   } catch {
@@ -87,5 +96,5 @@ export default async function CodePage({
     }
   }
 
-  return <SnippetClient id={initialData ? (initialData as any).id : id} initialData={initialData as any} />;
+  return <SnippetClient id={id} initialData={initialData as any} />;
 }
