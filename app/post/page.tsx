@@ -302,7 +302,7 @@ export default function PostPage() {
 
     setFormSuccess("Snippet created!");
     setForm({ title: "", code: "", category: "Scrape", isPublic: true });
-    setTimeout(() => { setShowCreateModal(false); setFormSuccess(""); fetchSnippets(true); }, 800);
+    setTimeout(() => { setShowCreateModal(false); setFormSuccess(""); fetchSnippets(false); }, 400);
   };
 
   const handleEditSnippet = async () => {
@@ -316,7 +316,7 @@ export default function PostPage() {
     const data = await res.json();
     if (res.ok) {
       setFormSuccess("Snippet updated!");
-      setTimeout(() => { setShowEditModal(false); setFormSuccess(""); setEditSnippet(null); fetchSnippets(true); }, 800);
+      setSnippets(prev => prev.map(s => s.id === editSnippet!.id ? { ...s, title: form.title, code: form.code, category: form.category, isPublic: form.isPublic, updatedAt: new Date().toISOString() } : s)); setTimeout(() => { setShowEditModal(false); setFormSuccess(""); setEditSnippet(null); fetchSnippets(false); }, 400);
     } else {
       setFormError(data.error || "Failed to update");
     }
@@ -421,7 +421,11 @@ export default function PostPage() {
   };
 
   const handleRun = async (s: Snippet) => {
-    setRunSnippet(s); setRunOutput(""); setRunImages([]); setRunHasError(false);
+    // If running the snippet currently being edited, use the live form code
+    const effectiveSnippet = (editSnippet && editSnippet.id === s.id)
+      ? { ...s, code: form.code }
+      : s;
+    setRunSnippet(effectiveSnippet); setRunOutput(""); setRunImages([]); setRunHasError(false);
     setRunElapsed(0); setCopiedOutput(false); setRunning(true); setShowRunModal(true);
     const abortCtrl = new AbortController();
     runAbortRef.current = abortCtrl;
@@ -429,7 +433,7 @@ export default function PostPage() {
       const res = await fetch("/api/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: s.code, snippetId: s.id }),
+        body: JSON.stringify({ code: effectiveSnippet.code, snippetId: effectiveSnippet.id }),
         signal: abortCtrl.signal,
       });
       if (!res.body) throw new Error("No response body");
