@@ -517,12 +517,12 @@ export default function PostPage() {
 
         <div className="admin-header">
           <div>
-            <div className="admin-title">
+            <h1 className="admin-title">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
               </svg>
               {user.username.toUpperCase()}
-            </div>
+            </h1>
             <div className="admin-subtitle">Welcome back, {user.username}</div>
           </div>
 
@@ -838,8 +838,8 @@ export default function PostPage() {
               <p style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-muted)", marginBottom: 16 }}>Account will be registered as MEMBER.</p>
               {regError   && <div className="alert alert-error">{regError}</div>}
               {regSuccess && <div className="alert alert-success">{regSuccess}</div>}
-              <input type="text" className="input-field" placeholder="Username" value={regForm.username} onChange={(e) => setRegForm({ ...regForm, username: e.target.value })} />
-              <input type="password" className="input-field" placeholder="Password" value={regForm.password} onChange={(e) => setRegForm({ ...regForm, password: e.target.value })} onKeyDown={(e) => e.key === "Enter" && handleRegister()} />
+              <input type="text" className="input-field" placeholder="Username" aria-label="Username" value={regForm.username} onChange={(e) => setRegForm({ ...regForm, username: e.target.value })} />
+              <input type="password" className="input-field" placeholder="Password" aria-label="Password" value={regForm.password} onChange={(e) => setRegForm({ ...regForm, password: e.target.value })} onKeyDown={(e) => e.key === "Enter" && handleRegister()} />
               <button className="btn btn-yellow" onClick={handleRegister} disabled={regLoading} aria-label="Register account" style={{ width: "100%", padding: "14px", fontSize: "12px", letterSpacing: "0.08em", marginTop: 4 }}>
                 {regLoading ? "CREATING..." : "CREATE ACCOUNT"}
               </button>
@@ -863,7 +863,7 @@ export default function PostPage() {
                 {runImages.map((img, i) => (
                   <div key={i} style={{ marginTop: 12 }}>
                     <div style={{ fontSize: 10, color: "var(--text-faint)", marginBottom: 4, letterSpacing: "0.05em" }}>📎 {img.name}</div>
-                    <img src={`data:${img.mime};base64,${img.data}`} alt={img.name} style={{ maxWidth: "100%", maxHeight: 400, borderRadius: 8, border: "1.5px solid var(--border-color)", display: "block" }} />
+                    <img src={`data:${img.mime};base64,${img.data}`} alt={img.name} width={600} height={400} style={{ maxWidth: "100%", maxHeight: 400, borderRadius: 8, border: "1.5px solid var(--border-color)", display: "block", width: "auto", height: "auto" }} />
                   </div>
                 ))}
               </div>
@@ -913,7 +913,7 @@ export default function PostPage() {
                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = "var(--border-color)"}>
                 CANCEL
               </button>
-              <button onClick={confirmDialog.onConfirm} aria-label={confirmDialog.confirmLabel || "Confirm"} style={{ flex: 1, padding: "10px 0", background: "#ef4444", border: "1.5px solid #dc2626", borderRadius: 8, cursor: "pointer", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, color: "#fff", letterSpacing: "0.05em" }}
+              <button onClick={confirmDialog.onConfirm} aria-label={confirmDialog.confirmLabel ?? "Confirm"} style={{ flex: 1, padding: "10px 0", background: "#ef4444", border: "1.5px solid #dc2626", borderRadius: 8, cursor: "pointer", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, color: "#fff", letterSpacing: "0.05em" }}
                 onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "#dc2626"}
                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "#ef4444"}>
                 DELETE

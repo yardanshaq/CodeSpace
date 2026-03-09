@@ -112,6 +112,7 @@ html, body {
   padding: 40px 24px;
   max-width: 1200px;
   margin: 0 auto;
+  min-height: 80vh; /* prevents footer CLS when content loads */
 }
 
 /* ── HOME ────────────────────────────────────────────────────────────────── */

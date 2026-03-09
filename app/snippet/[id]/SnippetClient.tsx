@@ -738,7 +738,7 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
 
             {!user && userChecked && (
               <span style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "var(--font-mono)" }}>
-                <a href="/login" style={{ color: "var(--teal)", textDecoration: "none", fontWeight: 700 }}>Sign in</a>
+                <a href="/login" style={{ color: "var(--teal)", textDecoration: "underline", textUnderlineOffset: 3, fontWeight: 700 }}>Sign in</a>
                 {" "}to like or comment
               </span>
             )}
@@ -874,7 +874,7 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
             style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "zoom-out", backdropFilter: "blur(4px)" }}
           >
             <div onClick={e => e.stopPropagation()} style={{ position: "relative", maxWidth: "min(520px, 90vw)", display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-              <img src={`/api/files/${previewFile.id}`} alt={previewFile.name} style={{ maxWidth: "min(500px, 80vw)", maxHeight: "55vh", objectFit: "contain", borderRadius: 8, boxShadow: "0 8px 40px rgba(0,0,0,0.5)" }} />
+              <img src={`/api/files/${previewFile.id}`} alt={previewFile.name} width={500} height={400} style={{ maxWidth: "min(500px, 80vw)", maxHeight: "55vh", objectFit: "contain", borderRadius: 8, boxShadow: "0 8px 40px rgba(0,0,0,0.5)", width: "auto", height: "auto" }} />
               <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "rgba(255,255,255,0.6)", display: "flex", alignItems: "center", gap: 10 }}>
                 <span>{previewFile.name}</span>
                 <span style={{ opacity: 0.4 }}>·</span>
@@ -904,7 +904,7 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
                 {runImages.map((img, i) => (
                   <div key={i} style={{ marginTop: 12 }}>
                     <div style={{ fontSize: 10, color: "var(--text-faint)", marginBottom: 4, letterSpacing: "0.05em" }}>📎 {img.name}</div>
-                    <img src={`data:${img.mime};base64,${img.data}`} alt={img.name} style={{ maxWidth: "100%", maxHeight: 400, borderRadius: 8, border: "1.5px solid var(--border-color)", display: "block" }} />
+                    <img src={`data:${img.mime};base64,${img.data}`} alt={img.name} width={600} height={400} style={{ maxWidth: "100%", maxHeight: 400, borderRadius: 8, border: "1.5px solid var(--border-color)", display: "block", width: "auto", height: "auto" }} />
                   </div>
                 ))}
               </div>

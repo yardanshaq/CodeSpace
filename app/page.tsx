@@ -498,30 +498,38 @@ export default function HomePage() {
               )}
             </div>
 
-            {/* POST button */}
-            {userChecked && user && (
-              <button
-                onClick={handlePostClick}
-                title="Post a snippet"
-                aria-label="Post a snippet"
-                style={{
-                  height: 52, padding: "0 18px", flexShrink: 0,
-                  border: "2.5px solid var(--border-color)", borderRadius: 12,
-                  background: "var(--teal)", color: "#000", cursor: "pointer",
-                  display: "flex", alignItems: "center", gap: 7,
-                  boxShadow: "3px 3px 0 var(--border-color)",
-                  fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700,
-                  letterSpacing: "0.06em", transition: "all .1s", whiteSpace: "nowrap",
-                }}
-                onMouseOver={e => { e.currentTarget.style.transform = "translate(-1px,-1px)"; e.currentTarget.style.boxShadow = "4px 4px 0 var(--border-color)"; }}
-                onMouseOut={e  => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "3px 3px 0 var(--border-color)"; }}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-                </svg>
-                <span className="post-btn-label">POST</span>
-              </button>
-            )}
+            {/* POST button — always rendered to prevent layout shift (CLS) */}
+            {/* Invisible placeholder before auth check, hidden when not logged in */}
+            <button
+              onClick={handlePostClick}
+              title="Post a snippet"
+              aria-label="Post a snippet"
+              style={{
+                height: 52,
+                flexShrink: 0,
+                borderRadius: 12,
+                background: "var(--teal)", color: "#000", cursor: "pointer",
+                display: "flex", alignItems: "center", gap: 7,
+                fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700,
+                letterSpacing: "0.06em", whiteSpace: "nowrap",
+                // Collapse to zero width when not logged in — no layout shift
+                maxWidth: userChecked && !user ? 0 : 200,
+                padding: userChecked && !user ? 0 : "0 18px",
+                border: userChecked && !user ? "none" : "2.5px solid var(--border-color)",
+                boxShadow: userChecked && !user ? "none" : "3px 3px 0 var(--border-color)",
+                opacity: !userChecked ? 0 : (user ? 1 : 0),
+                overflow: "hidden",
+                transition: "opacity 0.15s, transform 0.1s, max-width 0s",
+                pointerEvents: !userChecked || !user ? "none" : "auto",
+              }}
+              onMouseOver={e => { if (user) { e.currentTarget.style.transform = "translate(-1px,-1px)"; e.currentTarget.style.boxShadow = "4px 4px 0 var(--border-color)"; } }}
+              onMouseOut={e  => { if (user) { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "3px 3px 0 var(--border-color)"; } }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              <span className="post-btn-label">POST</span>
+            </button>
           </div>
         </div>
 
@@ -669,7 +677,7 @@ export default function HomePage() {
                     { label: "Post Snippet", href: "/post" },
                     { label: "Feedback",     href: "/feedback" },
                   ].map(({ label, href }) => (
-                    <a key={href} href={href} style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--text-muted)", textDecoration: "none", transition: "color .15s" }}
+                    <a key={href} href={href} style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--text-muted)", textDecoration: "underline", textUnderlineOffset: 3, transition: "color .15s" }}
                       onMouseOver={e => (e.currentTarget.style.color = "var(--teal)")}
                       onMouseOut={e  => (e.currentTarget.style.color = "var(--text-muted)")}>
                       {label}
@@ -705,7 +713,7 @@ export default function HomePage() {
                     { label: "Register", href: "/register" },
                     { label: "Sign In",  href: "/login" },
                   ].map(({ label, href }) => (
-                    <a key={href} href={href} style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--text-muted)", textDecoration: "none", transition: "color .15s" }}
+                    <a key={href} href={href} style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--text-muted)", textDecoration: "underline", textUnderlineOffset: 3, transition: "color .15s" }}
                       onMouseOver={e => (e.currentTarget.style.color = "var(--teal)")}
                       onMouseOut={e  => (e.currentTarget.style.color = "var(--text-muted)")}>
                       {label}
