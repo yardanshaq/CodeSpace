@@ -25,7 +25,7 @@
   --stripe-odd:   #ffffff;
   --stripe-even:  #fafafa;
   --divider:      #eeeeee;
-  --font-mono:    var(--font-space-mono), 'Space Mono', 'IBM Plex Mono', monospace;
+  --font-mono:    'Space Mono', 'IBM Plex Mono', monospace;
   --radius:       14px;
   --transition:   background 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 
