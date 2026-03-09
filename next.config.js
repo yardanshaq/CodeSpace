@@ -32,13 +32,13 @@ const isDev = process.env.NODE_ENV !== "production";
 const buildCsp = () => {
   // Dev mode butuh 'unsafe-eval' untuk Next.js HMR source maps
   const scriptSrc = isDev
-    ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
-    : "script-src 'self' 'unsafe-inline'";
+    ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://static.cloudflareinsights.com"
+    : "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com";
 
   // Dev butuh ws:// untuk webpack HMR websocket
   const connectSrc = isDev
-    ? "connect-src 'self' ws: wss:"
-    : "connect-src 'self'";
+    ? "connect-src 'self' ws: wss: https://cloudflareinsights.com"
+    : "connect-src 'self' https://cloudflareinsights.com";
 
   return [
     "default-src 'self'",
