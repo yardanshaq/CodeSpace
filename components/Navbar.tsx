@@ -140,7 +140,7 @@ export default function Navbar() {
 
             {/* Socials */}
             <div className="nav-socials-group" style={{ display: "flex", gap: 1 }}>
-              <a href="https://instagram.com/shaqsyr" target="_blank" rel="noopener noreferrer"
+              <a href="https://instagram.com/shaqsyr" target="_blank" rel="noopener noreferrer" aria-label="Instagram"
                 style={{ width: 32, height: 32, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", transition: "all .15s", border: "2px solid transparent", background: "transparent" }}
                 onMouseOver={e => { e.currentTarget.style.background = hoverBg; e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.border = `2px solid ${borderCol}`; }}
                 onMouseOut={e  => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.border = "2px solid transparent"; }}
@@ -151,7 +151,7 @@ export default function Navbar() {
                   <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/>
                 </svg>
               </a>
-              <a href="https://github.com/yardanshaq" target="_blank" rel="noopener noreferrer"
+              <a href="https://github.com/yardanshaq" target="_blank" rel="noopener noreferrer" aria-label="GitHub"
                 style={{ width: 32, height: 32, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", transition: "all .15s", border: "2px solid transparent", background: "transparent" }}
                 onMouseOver={e => { e.currentTarget.style.background = hoverBg; e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.border = `2px solid ${borderCol}`; }}
                 onMouseOut={e  => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.border = "2px solid transparent"; }}
@@ -166,7 +166,7 @@ export default function Navbar() {
             <div className="nav-divider" style={{ width: 1, height: 18, background: "var(--navbar-divider)", margin: "0 4px" }} />
 
             {/* Theme */}
-            <button onClick={toggle}
+            <button onClick={toggle} aria-label={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
               style={{ width: 32, height: 32, borderRadius: 8, flexShrink: 0, border: "2px solid transparent", background: "transparent", color: "var(--text-muted)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all .15s" }}
               onMouseOver={e => { e.currentTarget.style.background = hoverBg; e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.border = `2px solid ${borderCol}`; }}
               onMouseOut={e  => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.border = "2px solid transparent"; }}
@@ -189,7 +189,7 @@ export default function Navbar() {
             {/* AUTH */}
             {user ? (
               <div ref={dropdownRef} style={{ position: "relative", marginLeft: 2 }}>
-                <button onClick={() => setOpen(v => !v)} style={{
+                <button onClick={() => setOpen(v => !v)} aria-label="Open user menu" aria-expanded={dropdownOpen} style={{
                   display: "flex", alignItems: "center", gap: 7,
                   height: 36, padding: "0 10px 0 4px",
                   background: dropdownOpen ? hoverBg : "transparent",
@@ -253,7 +253,7 @@ export default function Navbar() {
                       { label: "Post", href: "/post", icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg> },
                       { label: "Settings", href: "/settings", icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> },
                     ].map(({ label, href, icon }) => (
-                      <button key={href} onClick={() => { setOpen(false); router.push(href); }}
+                      <button key={href} onClick={() => { setOpen(false); router.push(href); }} aria-label={`Go to ${label}`}
                         style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 16px", background: "transparent", border: "none", cursor: "pointer", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--text)", textAlign: "left", transition: "background .1s" }}
                         onMouseOver={e => e.currentTarget.style.background = hoverBg}
                         onMouseOut={e  => e.currentTarget.style.background = "transparent"}
@@ -263,7 +263,7 @@ export default function Navbar() {
                     ))}
 
                     {/* Sign out */}
-                    <button onClick={handleLogout}
+                    <button onClick={handleLogout} aria-label="Sign out"
                       style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 16px", background: "transparent", border: "none", borderTop: "1.5px solid var(--divider)", cursor: "pointer", fontFamily: "var(--font-mono)", fontSize: 12, color: "#ff6b6b", textAlign: "left", transition: "background .1s" }}
                       onMouseOver={e => e.currentTarget.style.background = "rgba(255,107,107,0.08)"}
                       onMouseOut={e  => e.currentTarget.style.background = "transparent"}

@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
-import PageLoader from "@/components/PageLoader";
+import dynamic from "next/dynamic";
+const PageLoader = dynamic(() => import("@/components/PageLoader"), { ssr: false });
 import { getCachedUser, setCachedUser } from "@/lib/authCache";
 
 interface User {
@@ -91,7 +92,7 @@ export default function PostPage() {
   const [showRegisterModal, setShowRegisterModal] = useState(false);
 
   const [confirmDialog, setConfirmDialog] = useState<{
-    open: boolean; title: string; message: string; onConfirm: () => void;
+    open: boolean; title: string; message: string; onConfirm: () => void; confirmLabel?: string;
   }>({ open: false, title: "", message: "", onConfirm: () => {} });
 
   const showConfirm = (title: string, message: string, onConfirm: () => void) =>
@@ -131,6 +132,8 @@ export default function PostPage() {
   const createFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const outputRef = useRef<HTMLDivElement | null>(null);
+  const snippetRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const [showScrollTop, setShowScrollTop] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -233,6 +236,13 @@ export default function PostPage() {
     return () => el.removeEventListener("scroll", onScroll);
   }, [showRunModal]);
 
+  // Show scroll-to-top button when user scrolls down
+  useEffect(() => {
+    const onScroll = () => setShowScrollTop(window.scrollY > 400);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
   useEffect(() => {
     const el = outputRef.current;
     if (!el || userScrolledUp.current) return;
@@ -316,7 +326,24 @@ export default function PostPage() {
     const data = await res.json();
     if (res.ok) {
       setFormSuccess("Snippet updated!");
-      setSnippets(prev => prev.map(s => s.id === editSnippet!.id ? { ...s, title: form.title, code: form.code, category: form.category, isPublic: form.isPublic, updatedAt: new Date().toISOString() } : s)); setTimeout(() => { setShowEditModal(false); setFormSuccess(""); setEditSnippet(null); fetchSnippets(false); }, 400);
+      const savedId = editSnippet!.id;
+      // Capture scroll position BEFORE closing modal
+      const scrollY = window.scrollY;
+      setSnippets(prev => prev.map(s => s.id === savedId ? { ...s, title: form.title, code: form.code, category: form.category, isPublic: form.isPublic, updatedAt: new Date().toISOString() } : s));
+      setTimeout(() => {
+        setShowEditModal(false); setFormSuccess(""); setEditSnippet(null);
+        // Restore scroll position immediately after modal closes
+        window.scrollTo({ top: scrollY, behavior: "instant" as ScrollBehavior });
+        // Then smooth scroll to the card
+        setTimeout(() => {
+          const el = snippetRefs.current.get(savedId);
+          if (el) {
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+          // Silent fetch — won't reset scroll
+          fetchSnippets(true);
+        }, 80);
+      }, 400);
     } else {
       setFormError(data.error || "Failed to update");
     }
@@ -479,6 +506,7 @@ export default function PostPage() {
         <button
           onClick={() => router.push("/")}
           className="btn btn-white"
+          aria-label="Back to home"
           style={{ marginBottom: 16, display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, padding: "7px 14px" }}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -501,13 +529,13 @@ export default function PostPage() {
           <div className="admin-actions">
             {isSuperAdmin && (
               <>
-                <button className="btn btn-white btn-icon" onClick={() => router.push("/users")} title="Manage users">
+                <button className="btn btn-white btn-icon" onClick={() => router.push("/users")} title="Manage users" aria-label="Manage users">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
                     <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
                   </svg>
                 </button>
-                <button className="btn btn-white btn-icon" onClick={() => router.push("/feedback/inbox")} title="Feedback inbox">
+                <button className="btn btn-white btn-icon" onClick={() => router.push("/feedback/inbox")} title="Feedback inbox" aria-label="Feedback inbox">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
                   </svg>
@@ -516,6 +544,7 @@ export default function PostPage() {
                   className="btn btn-yellow btn-icon"
                   onClick={() => { setRegError(""); setRegSuccess(""); setRegForm({ username: "", password: "" }); setShowRegisterModal(true); }}
                   title="Register new user"
+                  aria-label="Register new user"
                 >
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
@@ -528,6 +557,7 @@ export default function PostPage() {
               className="btn btn-teal btn-icon"
               onClick={() => { setForm({ title: "", code: "", category: "Scrape", isPublic: true }); setFormError(""); setFormSuccess(""); setCreatePendingFiles([]); setCreateFileError(""); setShowCreateModal(true); }}
               title="New snippet"
+              aria-label="Create new snippet"
             >
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
@@ -545,7 +575,7 @@ export default function PostPage() {
             {snippets.map((s) => {
               const catStyle = getCategoryStyle(s.category);
               return (
-                <div key={s.id} className="admin-snippet-card">
+                <div key={s.id} className="admin-snippet-card" ref={el => { if (el) snippetRefs.current.set(s.id, el); else snippetRefs.current.delete(s.id); }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div className="admin-snippet-title">{s.title}</div>
@@ -601,10 +631,10 @@ export default function PostPage() {
                     </span>
                   </div>
                   <div className="admin-snippet-actions">
-                    <button className="btn btn-yellow" onClick={() => handleRun(s)}>RUN</button>
-                    <button className="btn btn-teal"   onClick={() => openEdit(s)}>EDIT</button>
-                    <button className="btn btn-white"  onClick={() => router.push(`/code?v=${s.filename}`)}>VIEW</button>
-                    <button className="btn btn-red"    onClick={() => handleDeleteSnippet(s.id)}>DELETE</button>
+                    <button className="btn btn-yellow" onClick={() => handleRun(s)} aria-label={`Run ${s.title}`}>RUN</button>
+                    <button className="btn btn-teal"   onClick={() => openEdit(s)} aria-label={`Edit ${s.title}`}>EDIT</button>
+                    <button className="btn btn-white"  onClick={() => router.push(`/code?v=${s.filename}`)} aria-label={`View ${s.title}`}>VIEW</button>
+                    <button className="btn btn-red"    onClick={() => handleDeleteSnippet(s.id)} aria-label={`Delete ${s.title}`}>DELETE</button>
                   </div>
                 </div>
               );
@@ -627,7 +657,7 @@ export default function PostPage() {
                   {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>
                 {!isMember ? (
-                  <button className="toggle-btn" style={{ background: form.isPublic ? "#4ade80" : "#ddd", border: "2px solid var(--border-color)" }} onClick={() => setForm({ ...form, isPublic: !form.isPublic })}>
+                  <button className="toggle-btn" aria-label={`Toggle visibility: currently ${form.isPublic ? "public" : "private"}`} aria-pressed={form.isPublic} style={{ background: form.isPublic ? "#4ade80" : "#ddd", border: "2px solid var(--border-color)" }} onClick={() => setForm({ ...form, isPublic: !form.isPublic })}>
                     {form.isPublic ? "PUBLIC" : "PRIVATE"}
                   </button>
                 ) : (
@@ -647,7 +677,7 @@ export default function PostPage() {
                       <span style={{ background: "var(--text)", color: "var(--surface)", borderRadius: 4, padding: "1px 6px", fontSize: 10 }}>{createPendingFiles.length}</span>
                     )}
                   </span>
-                  <button className="btn btn-teal" style={{ fontSize: 10, padding: "5px 12px", gap: 5 }} onClick={() => createFileInputRef.current?.click()}>
+                  <button className="btn btn-teal" aria-label="Upload file" style={{ fontSize: 10, padding: "5px 12px", gap: 5 }} onClick={() => createFileInputRef.current?.click()}>
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
                     </svg>
@@ -671,7 +701,7 @@ export default function PostPage() {
                           <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)" }}>{file.name}</div>
                           <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>{formatBytes(file.size)}</div>
                         </div>
-                        <button onClick={() => handleCreateFileRemove(id)} style={{ width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "1.5px solid var(--border-color)", borderRadius: 6, cursor: "pointer", color: "var(--text-muted)", flexShrink: 0 }}
+                        <button onClick={() => handleCreateFileRemove(id)} aria-label="Remove file" style={{ width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "1.5px solid var(--border-color)", borderRadius: 6, cursor: "pointer", color: "var(--text-muted)", flexShrink: 0 }}
                           onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = "var(--red)"; (e.currentTarget as HTMLElement).style.color = "var(--red)"; }}
                           onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "var(--border-color)"; (e.currentTarget as HTMLElement).style.color = "var(--text-muted)"; }}>
                           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -699,7 +729,7 @@ export default function PostPage() {
               {createUploadError && <div className="alert alert-error" style={{ fontSize: 11, padding: "6px 10px" }}>{createUploadError}</div>}
               <div style={{ display: "flex", gap: 8 }}>
                 <button className="btn btn-white" onClick={() => { setShowCreateModal(false); setCreatePendingFiles([]); setCreateFileError(""); setCreateUploadError(""); }} disabled={formLoading}>CANCEL</button>
-                <button className="btn btn-teal" onClick={handleCreateSnippet} disabled={formLoading} title="Ctrl+S" style={{ flex: 1 }}>
+                <button className="btn btn-teal" onClick={handleCreateSnippet} disabled={formLoading} aria-label="Save new snippet" title="Ctrl+S" style={{ flex: 1 }}>
                   {createUploadProgress ? `UPLOADING ${createUploadProgress.current}/${createUploadProgress.total}... ${createUploadProgress.pct}%` : formLoading ? "SAVING..." : "SAVE CODE"}
                   {!formLoading && <span style={{ fontSize: 9, opacity: .5, marginLeft: 4 }}>Ctrl+S</span>}
                 </button>
@@ -723,7 +753,7 @@ export default function PostPage() {
                   {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>
                 {!isMember ? (
-                  <button className="toggle-btn" style={{ background: form.isPublic ? "#4ade80" : "#ddd", border: "2px solid var(--border-color)" }} onClick={() => setForm({ ...form, isPublic: !form.isPublic })}>
+                  <button className="toggle-btn" aria-label={`Toggle visibility: currently ${form.isPublic ? "public" : "private"}`} aria-pressed={form.isPublic} style={{ background: form.isPublic ? "#4ade80" : "#ddd", border: "2px solid var(--border-color)" }} onClick={() => setForm({ ...form, isPublic: !form.isPublic })}>
                     {form.isPublic ? "PUBLIC" : "PRIVATE"}
                   </button>
                 ) : (
@@ -741,7 +771,7 @@ export default function PostPage() {
                     ATTACHED FILES
                     {editFiles.length > 0 && <span style={{ background: "var(--text)", color: "var(--surface)", borderRadius: 4, padding: "1px 6px", fontSize: 10 }}>{editFiles.length}</span>}
                   </span>
-                  <button className="btn btn-teal" style={{ fontSize: 10, padding: "5px 12px", gap: 5, minWidth: 110 }} onClick={() => !fileUploading && fileInputRef.current?.click()} disabled={fileUploading}>
+                  <button className="btn btn-teal" aria-label="Upload file" style={{ fontSize: 10, padding: "5px 12px", gap: 5, minWidth: 110 }} onClick={() => !fileUploading && fileInputRef.current?.click()} disabled={fileUploading}>
                     {fileUploading ? `${uploadProgress}%` : (
                       <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>UPLOAD FILE</>
                     )}
@@ -776,7 +806,7 @@ export default function PostPage() {
                           <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)" }}>{f.name}</div>
                           <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>{formatBytes(f.size)}</div>
                         </div>
-                        <button onClick={() => handleFileDelete(f.id)} style={{ width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "1.5px solid var(--border-color)", borderRadius: 6, cursor: "pointer", color: "var(--text-muted)", flexShrink: 0 }}
+                        <button onClick={() => handleFileDelete(f.id)} aria-label={`Delete file ${f.name}`} style={{ width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "1.5px solid var(--border-color)", borderRadius: 6, cursor: "pointer", color: "var(--text-muted)", flexShrink: 0 }}
                           onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = "var(--red)"; (e.currentTarget as HTMLElement).style.color = "var(--red)"; }}
                           onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "var(--border-color)"; (e.currentTarget as HTMLElement).style.color = "var(--text-muted)"; }}>
                           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -791,7 +821,7 @@ export default function PostPage() {
             </div>
             <div className="modal-footer">
               <button className="btn btn-white" onClick={() => setShowEditModal(false)}>CANCEL</button>
-              <button className="btn btn-teal" onClick={handleEditSnippet} disabled={formLoading} title="Ctrl+S">
+              <button className="btn btn-teal" onClick={handleEditSnippet} disabled={formLoading} aria-label="Save changes" title="Ctrl+S">
                 {formLoading ? "SAVING..." : "SAVE CHANGES"}{!formLoading && <span style={{ fontSize: 9, opacity: .5, marginLeft: 4 }}>Ctrl+S</span>}
               </button>
             </div>
@@ -810,7 +840,7 @@ export default function PostPage() {
               {regSuccess && <div className="alert alert-success">{regSuccess}</div>}
               <input type="text" className="input-field" placeholder="Username" value={regForm.username} onChange={(e) => setRegForm({ ...regForm, username: e.target.value })} />
               <input type="password" className="input-field" placeholder="Password" value={regForm.password} onChange={(e) => setRegForm({ ...regForm, password: e.target.value })} onKeyDown={(e) => e.key === "Enter" && handleRegister()} />
-              <button className="btn btn-yellow" onClick={handleRegister} disabled={regLoading} style={{ width: "100%", padding: "14px", fontSize: "12px", letterSpacing: "0.08em", marginTop: 4 }}>
+              <button className="btn btn-yellow" onClick={handleRegister} disabled={regLoading} aria-label="Register account" style={{ width: "100%", padding: "14px", fontSize: "12px", letterSpacing: "0.08em", marginTop: 4 }}>
                 {regLoading ? "CREATING..." : "CREATE ACCOUNT"}
               </button>
               <button className="close-link" onClick={() => setShowRegisterModal(false)}>Close</button>
@@ -878,12 +908,12 @@ export default function PostPage() {
             </div>
             <p style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6, margin: "0 0 22px 0" }}>{confirmDialog.message}</p>
             <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={closeConfirm} style={{ flex: 1, padding: "10px 0", background: "var(--surface2)", border: "1.5px solid var(--border-color)", borderRadius: 8, cursor: "pointer", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, color: "var(--text)", letterSpacing: "0.05em" }}
+              <button onClick={closeConfirm} aria-label="Cancel" style={{ flex: 1, padding: "10px 0", background: "var(--surface2)", border: "1.5px solid var(--border-color)", borderRadius: 8, cursor: "pointer", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, color: "var(--text)", letterSpacing: "0.05em" }}
                 onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = "var(--text)"}
                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = "var(--border-color)"}>
                 CANCEL
               </button>
-              <button onClick={confirmDialog.onConfirm} style={{ flex: 1, padding: "10px 0", background: "#ef4444", border: "1.5px solid #dc2626", borderRadius: 8, cursor: "pointer", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, color: "#fff", letterSpacing: "0.05em" }}
+              <button onClick={confirmDialog.onConfirm} aria-label={confirmDialog.confirmLabel || "Confirm"} style={{ flex: 1, padding: "10px 0", background: "#ef4444", border: "1.5px solid #dc2626", borderRadius: 8, cursor: "pointer", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, color: "#fff", letterSpacing: "0.05em" }}
                 onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "#dc2626"}
                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "#ef4444"}>
                 DELETE
@@ -893,7 +923,29 @@ export default function PostPage() {
         </div>
       )}
 
-      <style>{`
+      {/* Scroll to top button */}
+      {showScrollTop && (
+        <button
+          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          title="Scroll to top" aria-label="Scroll to top"
+          style={{
+            position: "fixed", bottom: 28, right: 28, zIndex: 9000,
+            width: 44, height: 44, borderRadius: "50%",
+            background: "var(--teal)", border: "2.5px solid var(--border-color)",
+            boxShadow: "3px 3px 0 var(--border-color)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            cursor: "pointer", transition: "all .15s",
+          }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = "translate(-1px,-1px)"; (e.currentTarget as HTMLElement).style.boxShadow = "4px 4px 0 var(--border-color)"; }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = "none"; (e.currentTarget as HTMLElement).style.boxShadow = "3px 3px 0 var(--border-color)"; }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#000" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
+          </svg>
+        </button>
+      )}
+
+      <style suppressHydrationWarning>{`
         @keyframes blink  { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
         @keyframes spin   { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }

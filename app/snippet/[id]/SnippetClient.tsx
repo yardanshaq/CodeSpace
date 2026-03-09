@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
-import PageLoader from "@/components/PageLoader";
+import dynamic from "next/dynamic";
+const PageLoader = dynamic(() => import("@/components/PageLoader"), { ssr: false });
 
 interface GlobalFile {
   id: string;
@@ -273,17 +274,21 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
   }, [id]);
 
   // Bundle fetch: 1 request = snippet + likes + comments + files
-  const fetchBundle = useCallback(async () => {
+  // withAuth: true = kirim credentials (after userChecked), false = skip liked check
+  const fetchBundle = useCallback(async (withAuth = false) => {
     if (!id) return;
     try {
-      const r = await fetch(`/api/snippets/${id}/bundle`, { cache: "no-store", credentials: "include" });
+      const r = await fetch(`/api/snippets/${id}/bundle`, {
+        cache: "no-store",
+        credentials: withAuth ? "include" : "omit",
+      });
       if (!r.ok) { setLoading(false); setCommentsLoading(false); return; }
       const data = await r.json();
       setSnippet(data.snippet);
       lastUpdatedAt.current = data.snippet?.updatedAt ?? null;
       setAttachments(data.files ?? []);
       setLikeCount(data.likeCount ?? 0);
-      setLiked(data.liked ?? false);
+      if (withAuth) setLiked(data.liked ?? false);
       setComments(data.comments ?? []);
       setCommentsLoading(false);
       setLoading(false);
@@ -293,11 +298,16 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
     }
   }, [id]);
 
+  // After auth confirmed, re-fetch bundle WITH credentials to get correct liked status
+  useEffect(() => {
+    if (userChecked && id) fetchBundle(true);
+  }, [userChecked, fetchBundle, id]);
+
   useEffect(() => {
     if (!id || hasTracked.current) return;
     hasTracked.current = true;
 
-    fetchBundle();
+    fetchBundle(false); // immediate load without auth (fast)
 
     let shouldTrackView = false;
     try {
@@ -925,7 +935,7 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
         </div>
       )}
 
-      <style>{`
+      <style suppressHydrationWarning>{`
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
         @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }

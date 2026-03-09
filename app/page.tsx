@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
-import PageLoader from "@/components/PageLoader";
+import dynamic from "next/dynamic";
+const PageLoader = dynamic(() => import("@/components/PageLoader"), { ssr: false });
 
 interface Snippet {
   id: string;
@@ -83,6 +84,7 @@ export default function HomePage() {
   const sortRef                               = useRef<HTMLDivElement>(null);
   const catFilterRef                          = useRef<HTMLDivElement>(null);
   const pollRef                               = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [showScrollTop, setShowScrollTop]     = useState(false);
 
   const checkAuth = () => {
     fetch("/api/auth/me", { credentials: "include" })
@@ -98,6 +100,12 @@ export default function HomePage() {
     checkAuth();
     window.addEventListener("auth-change", checkAuth);
     return () => window.removeEventListener("auth-change", checkAuth);
+  }, []);
+
+  useEffect(() => {
+    const onScroll = () => setShowScrollTop(window.scrollY > 400);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
   useEffect(() => {
@@ -202,6 +210,7 @@ export default function HomePage() {
           <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 20, flexWrap: "wrap" }}>
             <button
               onClick={() => router.push("/trending")}
+              aria-label="Go to Trending page"
               style={{
                 display: "flex", alignItems: "center", gap: 8,
                 padding: "10px 20px", borderRadius: 999,
@@ -223,6 +232,7 @@ export default function HomePage() {
 
             <button
               onClick={() => router.push("/feedback")}
+              aria-label="Send Feedback"
               style={{
                 display: "flex", alignItems: "center", gap: 8,
                 padding: "10px 20px", borderRadius: 999,
@@ -250,13 +260,16 @@ export default function HomePage() {
 
           {/* Search input */}
           <div style={{ flex: 1, position: "relative", minWidth: 0 }}>
+            <label htmlFor="snippet-search" className="sr-only">Search snippets</label>
             <input
+              id="snippet-search"
               type="text"
               className="search-input"
               placeholder="Search snippets..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               style={{ paddingRight: 52 }}
+              aria-label="Search snippets"
             />
             <span className="search-icon">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -272,6 +285,7 @@ export default function HomePage() {
             <div ref={sortRef} style={{ position: "relative", flexShrink: 0 }}>
               <button
                 onClick={() => { setShowSort(v => !v); setShowFilter(false); setShowCatFilter(false); }}
+                aria-label="Sort snippets" aria-expanded={showSort}
                 style={{
                   height: 52, padding: "0 14px",
                   border: "2.5px solid var(--border-color)", borderRadius: 12,
@@ -332,6 +346,7 @@ export default function HomePage() {
             <div ref={filterRef} style={{ position: "relative", flexShrink: 0 }}>
               <button
                 onClick={() => { setShowFilter(v => !v); setShowSort(false); setShowCatFilter(false); }}
+                aria-label="Filter by author" aria-expanded={showFilter}
                 style={{
                   width: 52, height: 52,
                   border: "2.5px solid var(--border-color)", borderRadius: 12,
@@ -367,7 +382,7 @@ export default function HomePage() {
                       FILTER BY AUTHOR
                     </span>
                     {selectedAuthors.length > 0 && (
-                      <button onClick={clearAuthors} style={{ fontSize: 10, fontFamily: "var(--font-mono)", background: "none", border: "none", cursor: "pointer", color: "var(--red)", fontWeight: 700 }}>
+                      <button onClick={clearAuthors} aria-label="Clear author filters" style={{ fontSize: 10, fontFamily: "var(--font-mono)", background: "none", border: "none", cursor: "pointer", color: "var(--red)", fontWeight: 700 }}>
                         CLEAR
                       </button>
                     )}
@@ -410,6 +425,7 @@ export default function HomePage() {
             <div ref={catFilterRef} style={{ position: "relative", flexShrink: 0 }}>
               <button
                 onClick={() => { setShowCatFilter(v => !v); setShowSort(false); setShowFilter(false); }}
+                aria-label="Filter by category" aria-expanded={showCatFilter}
                 style={{
                   width: 52, height: 52,
                   border: "2.5px solid var(--border-color)", borderRadius: 12,
@@ -442,7 +458,7 @@ export default function HomePage() {
                       FILTER BY CATEGORY
                     </span>
                     {selectedCategories.length > 0 && (
-                      <button onClick={clearCategories} style={{ fontSize: 10, fontFamily: "var(--font-mono)", background: "none", border: "none", cursor: "pointer", color: "var(--red)", fontWeight: 700 }}>
+                      <button onClick={clearCategories} aria-label="Clear category filters" style={{ fontSize: 10, fontFamily: "var(--font-mono)", background: "none", border: "none", cursor: "pointer", color: "var(--red)", fontWeight: 700 }}>
                         CLEAR
                       </button>
                     )}
@@ -487,6 +503,7 @@ export default function HomePage() {
               <button
                 onClick={handlePostClick}
                 title="Post a snippet"
+                aria-label="Post a snippet"
                 style={{
                   height: 52, padding: "0 18px", flexShrink: 0,
                   border: "2.5px solid var(--border-color)", borderRadius: 12,
@@ -577,7 +594,7 @@ export default function HomePage() {
                       </svg>
                       {snippet.admin.username}
                     </span>
-                    <button className="btn btn-black" onClick={() => router.push(`/code?v=${snippet.filename}`)}>
+                    <button className="btn btn-black" onClick={() => router.push(`/code?v=${snippet.filename}`)} aria-label={`View ${snippet.title}`}>
                       View
                     </button>
                   </div>
@@ -722,7 +739,28 @@ export default function HomePage() {
         </div>
       </footer>
 
-      <style>{`
+      {showScrollTop && (
+        <button
+          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          title="Scroll to top" aria-label="Scroll to top"
+          style={{
+            position: "fixed", bottom: 28, right: 28, zIndex: 9000,
+            width: 44, height: 44, borderRadius: "50%",
+            background: "var(--teal)", border: "2.5px solid var(--border-color)",
+            boxShadow: "3px 3px 0 var(--border-color)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            cursor: "pointer", transition: "all .15s",
+          }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = "translate(-1px,-1px)"; (e.currentTarget as HTMLElement).style.boxShadow = "4px 4px 0 var(--border-color)"; }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = "none"; (e.currentTarget as HTMLElement).style.boxShadow = "3px 3px 0 var(--border-color)"; }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#000" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
+          </svg>
+        </button>
+      )}
+
+      <style suppressHydrationWarning>{`
         /* ── Search row responsive layout ── */
         .search-row-wrap {
           max-width: 700px;

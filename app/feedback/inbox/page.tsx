@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import { getCachedUser, setCachedUser } from "@/lib/authCache";
-import PageLoader from "@/components/PageLoader";
+import dynamic from "next/dynamic";
+const PageLoader = dynamic(() => import("@/components/PageLoader"), { ssr: false });
 
 interface FeedbackItem {
   id: string;

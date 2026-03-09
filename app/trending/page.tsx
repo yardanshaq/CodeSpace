@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
+import dynamic from "next/dynamic";
+const PageLoader = dynamic(() => import("@/components/PageLoader"), { ssr: false });
 
 interface Snippet {
   id: string;
@@ -22,42 +24,61 @@ function formatDate(d: string) {
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
-  Scrape:     "#4ecdc4",
-  AI:         "#f5c542",
-  Downloader: "#f25c54",
-  Search:     "#a78bfa",
-  Tools:      "#4ade80",
+  Scrape: "#4ecdc4", AI: "#f5c542", Downloader: "#f25c54",
+  Search: "#a78bfa", Tools: "#4ade80",
 };
+
+type Period = "all" | "week" | "month";
+
+function filterByPeriod(list: Snippet[], period: Period): Snippet[] {
+  if (period === "all") return list;
+  const cutoff = Date.now() - (period === "week" ? 7 : 30) * 24 * 60 * 60 * 1000;
+  return list.filter(s => new Date(s.createdAt).getTime() > cutoff);
+}
 
 export default function TrendingPage() {
   const router = useRouter();
-  const [snippets, setSnippets] = useState<Snippet[]>([]);
-  const [loading, setLoading]   = useState(true);
-  const [period, setPeriod]     = useState<"all" | "week" | "month">("all");
+  // Cache semua data di sini — fetch cuma sekali, filter di client
+  const cacheRef                    = useRef<Snippet[] | null>(null);
+  const [allSnippets, setAllSnippets] = useState<Snippet[]>([]);
+  const [period, setPeriod]         = useState<Period>("all");
+  const [loading, setLoading]       = useState(true);
+
+  const snippets = filterByPeriod(allSnippets, period);
+  const top3     = snippets.slice(0, 3);
+  const rest     = snippets.slice(3);
+
+  const fetchAll = useCallback(async (silent = false) => {
+    // Kalau sudah ada cache, langsung pakai dulu
+    if (cacheRef.current && silent) {
+      setAllSnippets(cacheRef.current);
+      return;
+    }
+    if (!silent) setLoading(true);
+    try {
+      const res  = await fetch("/api/snippets?sortBy=views&order=desc");
+      const data = await res.json();
+      const list: Snippet[] = Array.isArray(data) ? data : [];
+      cacheRef.current = list;
+      setAllSnippets(list);
+    } catch { /* silent */ }
+    finally { if (!silent) setLoading(false); }
+  }, []);
 
   useEffect(() => {
-    setLoading(true);
-    fetch("/api/snippets?sortBy=views&order=desc")
-      .then(r => r.json())
-      .then(data => {
-        let list: Snippet[] = Array.isArray(data) ? data : [];
+    // Kalau cache sudah ada (navigasi balik), render langsung tanpa loading
+    if (cacheRef.current) {
+      setAllSnippets(cacheRef.current);
+      setLoading(false);
+    }
+    fetchAll(false);
+    // Poll tiap 15 detik secara silent
+    const t = setInterval(() => fetchAll(true), 15000);
+    return () => clearInterval(t);
+  }, [fetchAll]);
 
-        if (period === "week") {
-          const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
-          list = list.filter(s => new Date(s.createdAt).getTime() > cutoff);
-        } else if (period === "month") {
-          const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
-          list = list.filter(s => new Date(s.createdAt).getTime() > cutoff);
-        }
-
-        setSnippets(list);
-      })
-      .catch(() => setSnippets([]))
-      .finally(() => setLoading(false));
-  }, [period]);
-
-  const top3 = snippets.slice(0, 3);
-  const rest = snippets.slice(3);
+  // Period switch — INSTAN karena filter di client, tidak fetch ulang
+  const handlePeriod = (p: Period) => setPeriod(p);
 
   return (
     <>
@@ -86,20 +107,25 @@ export default function TrendingPage() {
             </div>
           </div>
 
-          {/* Period filter */}
+          {/* Period filter — switch instan, no refetch */}
           <div style={{ display: "flex", gap: 8, marginTop: 18 }}>
-            {([["all","All Time"],["week","This Week"],["month","This Month"]] as const).map(([val, label]) => (
+            {([ ["all","All Time"], ["week","This Week"], ["month","This Month"] ] as [Period, string][]).map(([val, label]) => (
               <button
                 key={val}
-                onClick={() => setPeriod(val)}
+                onClick={() => handlePeriod(val)}
+                aria-pressed={period === val}
+                aria-label={`Filter by ${label}`}
                 style={{
                   padding: "7px 16px", borderRadius: 8,
-                  border: `2px solid ${period === val ? "var(--border-color)" : "var(--border-color)"}`,
+                  border: "2px solid var(--border-color)",
                   background: period === val ? "var(--text)" : "var(--surface)",
-                  color: period === val ? "var(--surface)" : "var(--text-muted)",
+                  color:      period === val ? "var(--surface)" : "var(--text-muted)",
                   cursor: "pointer", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700,
-                  letterSpacing: "0.04em", boxShadow: "2px 2px 0 var(--border-color)", transition: "all .1s",
+                  letterSpacing: "0.04em", boxShadow: "2px 2px 0 var(--border-color)",
+                  transition: "box-shadow 0.12s ease, transform 0.12s ease",
                 }}
+                onMouseOver={e => { (e.currentTarget as HTMLElement).style.transform = "translate(-1px,-1px)"; (e.currentTarget as HTMLElement).style.boxShadow = "3px 3px 0 var(--border-color)"; }}
+                onMouseOut={e  => { (e.currentTarget as HTMLElement).style.transform = "none";                 (e.currentTarget as HTMLElement).style.boxShadow = "2px 2px 0 var(--border-color)"; }}
               >
                 {label}
               </button>
@@ -108,9 +134,9 @@ export default function TrendingPage() {
         </div>
 
         {loading ? (
-          <div className="loading">Loading trending snippets...</div>
+          <PageLoader />
         ) : snippets.length === 0 ? (
-          <div className="loading">No snippets found for this period.</div>
+          <div className="loading" role="status">No snippets found for this period.</div>
         ) : (
           <>
             {/* Top 3 podium */}
@@ -123,14 +149,17 @@ export default function TrendingPage() {
                     <div
                       key={s.id}
                       onClick={() => router.push(`/code?v=${s.filename}`)}
+                      role="article"
+                      aria-label={`#${i+1} trending: ${s.title}`}
                       style={{
                         background: "var(--surface)", border: `2.5px solid ${medal}`,
                         borderRadius: 14, padding: 20, cursor: "pointer",
-                        boxShadow: `4px 4px 0 ${medal}`, transition: "all .15s",
+                        boxShadow: `4px 4px 0 ${medal}`,
+                        transition: "box-shadow 0.12s ease, transform 0.12s ease",
                         display: "flex", flexDirection: "column", gap: 10,
                       }}
                       onMouseOver={e => { (e.currentTarget as HTMLElement).style.transform = "translate(-2px,-2px)"; (e.currentTarget as HTMLElement).style.boxShadow = `6px 6px 0 ${medal}`; }}
-                      onMouseOut={e  => { (e.currentTarget as HTMLElement).style.transform = "none"; (e.currentTarget as HTMLElement).style.boxShadow = `4px 4px 0 ${medal}`; }}
+                      onMouseOut={e  => { (e.currentTarget as HTMLElement).style.transform = "none";                  (e.currentTarget as HTMLElement).style.boxShadow = `4px 4px 0 ${medal}`; }}
                     >
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                         <div style={{
@@ -183,6 +212,7 @@ export default function TrendingPage() {
                   <div
                     key={s.id}
                     onClick={() => router.push(`/code?v=${s.filename}`)}
+                    role="listitem"
                     style={{
                       display: "flex", alignItems: "center", gap: 16, padding: "14px 20px",
                       background: i % 2 === 0 ? "var(--stripe-odd)" : "var(--stripe-even)",
