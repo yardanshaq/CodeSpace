@@ -7,6 +7,7 @@ import Navbar from "@/components/Navbar";
 export default function RegisterPage() {
   const router = useRouter();
   const [username, setUsername] = useState("");
+  const [email,    setEmail]    = useState("");
   const [password, setPassword] = useState("");
   const [confirm,  setConfirm]  = useState("");
   const [error,    setError]    = useState("");
@@ -17,12 +18,13 @@ export default function RegisterPage() {
     if (!username || !password || !confirm) { setError("Please fill in all fields"); return; }
     if (password !== confirm)               { setError("Passwords do not match"); return; }
     if (password.length < 6)               { setError("Password must be at least 6 characters"); return; }
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setError("Invalid email address"); return; }
     setLoading(true); setError("");
     try {
       const res  = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username, password, email: email || undefined }),
       });
       const data = await res.json();
       if (data.success) {
@@ -65,6 +67,22 @@ export default function RegisterPage() {
             onChange={e => setUsername(e.target.value)}
             autoFocus
           />
+
+          {/* Email — optional */}
+          <div>
+            <input
+              aria-label="Email"
+              type="email" className="input-field"
+              placeholder="Email (optional — for password recovery)"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              style={{ marginBottom: 0 }}
+            />
+            <p style={{ fontFamily:"var(--font-mono)", fontSize:10, color:"var(--text-faint)", marginTop:5, marginBottom:0 }}>
+              Without an email you won&apos;t be able to reset your password if you forget it.
+            </p>
+          </div>
+
           <input
             aria-label="Password"
             type="password" className="input-field"

@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { currentPassword, newUsername, newPassword } = await req.json();
+    const { currentPassword, newUsername, newPassword, email } = await req.json();
 
     if (!currentPassword) {
       return NextResponse.json({ error: "Current password required" }, { status: 400 });
@@ -57,6 +57,15 @@ export async function POST(req: NextRequest) {
       updateData.password = await bcrypt.hash(newPassword, 12);
     }
 
+    if (email !== undefined) {
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return NextResponse.json({ error: "Invalid email address" }, { status: 400 });
+      }
+      const existing = email ? await prisma.admin.findFirst({ where: { email, NOT: { id: session.id } } }) : null;
+      if (existing) return NextResponse.json({ error: "Email already in use" }, { status: 400 });
+      updateData.email = email || null;
+    }
+
     if (Object.keys(updateData).length === 0) {
       return NextResponse.json({ error: "No changes provided" }, { status: 400 });
     }
@@ -76,7 +85,7 @@ export async function POST(req: NextRequest) {
     if (!updatedAdmin) return NextResponse.json({ error: "Server error" }, { status: 500 });
 
     const rawToken = await createSession(
-      { id: updatedAdmin.id, username: updatedAdmin.username, role: updatedAdmin.role as "SUPERADMIN" | "ADMIN" | "MEMBER" },
+      { id: updatedAdmin.id, username: updatedAdmin.username, email: updatedAdmin.email, role: updatedAdmin.role as "SUPERADMIN" | "ADMIN" | "MEMBER" },
       ip,
       ua
     );

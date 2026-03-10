@@ -10,6 +10,7 @@ import { getCachedUser, setCachedUser } from "@/lib/authCache";
 interface User {
   id: string;
   username: string;
+  email?: string;
   role: "SUPERADMIN" | "ADMIN" | "MEMBER";
 }
 
@@ -19,6 +20,7 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(!getCachedUser());
 
   const [currentPassword, setCurrentPassword] = useState("");
+  const [email, setEmail] = useState("");
   const [newUsername, setNewUsername] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -37,6 +39,7 @@ export default function SettingsPage() {
         if (!data.authenticated) { setCachedUser(null); router.push("/login"); return; }
         setUser(data.user); setCachedUser(data.user);
         setNewUsername(data.user.username);
+        if (data.user.email) setEmail(data.user.email);
         setLoading(false);
       })
       .catch(() => router.push("/login"));
@@ -53,6 +56,7 @@ export default function SettingsPage() {
     const payload: Record<string, string> = { currentPassword };
     if (newUsername !== user?.username) payload.newUsername = newUsername;
     if (newPassword) payload.newPassword = newPassword;
+    if (email !== (user?.email ?? "")) payload.email = email;
 
     if (Object.keys(payload).length === 1) { setError("No changes to save"); return; }
 
@@ -124,6 +128,22 @@ export default function SettingsPage() {
               className="input-field"
               value={newUsername}
               onChange={(e) => setNewUsername(e.target.value)}
+              style={{ marginBottom: 0 }}
+            />
+          </div>
+
+          <div style={{ height: 1, background: "var(--border-color)" }} />
+
+          <div>
+            <label style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", color: "var(--text-muted)", display: "block", marginBottom: 6 }}>
+              EMAIL <span style={{ fontWeight: 400, opacity: 0.6 }}>(used for password recovery)</span>
+            </label>
+            <input
+              type="email"
+              className="input-field"
+              placeholder="your@email.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               style={{ marginBottom: 0 }}
             />
           </div>

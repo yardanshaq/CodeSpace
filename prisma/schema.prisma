@@ -18,6 +18,7 @@ model system_alerts {
 model Admin {
   id          String     @id @default(cuid())
   username    String     @unique
+  email       String?    @unique
   password    String
   role        Role       @default(ADMIN)
   lastLoginAt DateTime?
@@ -25,8 +26,9 @@ model Admin {
   snippets    Snippet[]
   likes       Like[]
   comments    Comment[]
-  feedbacks   Feedback[]
-  createdAt   DateTime   @default(now())
+  feedbacks      Feedback[]
+  passwordResets PasswordReset[]
+  createdAt      DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 }
 
@@ -98,5 +100,15 @@ model ProxyDomain {
   id        String   @id @default(cuid())
   domain    String   @unique
   note      String   @default("")
+  createdAt DateTime @default(now())
+}
+
+model PasswordReset {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  adminId   String
+  admin     Admin    @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  used      Boolean  @default(false)
   createdAt DateTime @default(now())
 }

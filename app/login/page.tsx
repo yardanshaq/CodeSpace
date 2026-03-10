@@ -111,6 +111,15 @@ function LoginForm() {
             onKeyDown={e => e.key === "Enter" && handleLogin()}
           />
 
+          <div style={{ textAlign:"right", marginTop:-6 }}>
+            <a href="/forgot-password" style={{ fontFamily:"var(--font-mono)", fontSize:11, color:"var(--text-faint)", textDecoration:"none" }}
+              onMouseOver={e => (e.currentTarget.style.color = "var(--teal)")}
+              onMouseOut={e  => (e.currentTarget.style.color = "var(--text-faint)")}
+            >
+              Forgot password?
+            </a>
+          </div>
+
           <button
             className="btn btn-teal" onClick={handleLogin} disabled={loading}
             style={{ width:"100%", padding:"14px", fontSize:"13px", letterSpacing:"0.1em", color:"#000", marginTop:4 }}

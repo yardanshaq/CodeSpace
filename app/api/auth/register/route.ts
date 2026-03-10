@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { username, password } = await req.json();
+    const { username, password, email } = await req.json();
 
     if (!username || !password || typeof username !== "string" || typeof password !== "string") {
       return NextResponse.json({ error: "Username and password required" }, { status: 400 });
@@ -68,6 +68,13 @@ export async function POST(req: NextRequest) {
     }
     if (password.length < 6) {
       return NextResponse.json({ error: "Password must be at least 6 characters" }, { status: 400 });
+    }
+    if (email && typeof email === "string") {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return NextResponse.json({ error: "Invalid email address" }, { status: 400 });
+      }
+      const emailTaken = await prisma.admin.findUnique({ where: { email } });
+      if (emailTaken) return NextResponse.json({ error: "Email already in use" }, { status: 409 });
     }
 
     const MAX_TOTAL_ACCOUNTS = parseInt(process.env.MAX_ACCOUNTS || "500");
@@ -83,7 +90,7 @@ export async function POST(req: NextRequest) {
 
     const hashed = await bcrypt.hash(password, 12);
     const member = await prisma.admin.create({
-      data: { username, password: hashed, role: Role.MEMBER },
+      data: { username, password: hashed, role: Role.MEMBER, ...(email ? { email } : {}) },
       select: { id: true, username: true, role: true },
     });
 
