@@ -17,7 +17,7 @@ interface ServerStats {
   snippets: number; users: number; views: number;
   likes: number; comments: number; dbLatency: number;
   uptime: number; hardware: Hardware;
-  recentSnippets: { id: string; title: string; category: string; createdAt: string; views: number }[];
+  recentSnippets: { id: string; title: string; category: string; createdAt: string; views: number; filename: string }[];
   timestamp: string;
 }
 interface DataPoint { time: string; latency: number; }
@@ -37,40 +37,76 @@ const fmtUp    = (s: number) => { const d=Math.floor(s/86400),h=Math.floor((s%86
 const fmtDate  = (iso: string) => new Date(iso).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
 
 function LatencyGraph({ data }: { data: DataPoint[] }) {
-  if (data.length < 2) return (
-    <div style={{ height: 60 }}>
-      {/* Skeleton placeholder bars */}
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height: "100%", padding: "0 2px" }}>
-        {[40,55,35,60,45,70,50,65,42,58].map((h, i) => (
-          <div key={i} style={{
-            flex: 1, height: `${h}%`, borderRadius: 2,
-            background: "var(--divider)", opacity: 0.5,
-          }}/>
-        ))}
-      </div>
+  const W = 500, H = 120;
+  const GRID_COLS = 10, GRID_ROWS = 5;
+
+  // Grid lines
+  const gridLines = [];
+  for (let i = 0; i <= GRID_ROWS; i++) {
+    const y = (i / GRID_ROWS) * H;
+    gridLines.push(<line key={`h${i}`} x1="0" y1={y} x2={W} y2={y} stroke="var(--grid-line)" strokeWidth="0.5"/>);
+  }
+  for (let i = 0; i <= GRID_COLS; i++) {
+    const x = (i / GRID_COLS) * W;
+    gridLines.push(<line key={`v${i}`} x1={x} y1="0" x2={x} y2={H} stroke="var(--grid-line)" strokeWidth="0.5"/>);
+  }
+
+  if (data.length < 1) return (
+    <div style={{ position:"relative", background:"var(--graph-bg)", borderRadius:4, overflow:"hidden" }}>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width:"100%", height:120, display:"block" }} preserveAspectRatio="none">
+        {gridLines}
+        <text x={W/2} y={H/2} textAnchor="middle" dominantBaseline="middle"
+          style={{ fontFamily:"var(--font-mono)", fontSize:14, fill:"var(--text-faint)" }}>
+          Waiting for data...
+        </text>
+      </svg>
     </div>
   );
-  const W=500, H=80, vals=data.map(d=>d.latency);
-  const min=Math.max(0,Math.min(...vals)-20), max=Math.max(...vals)+20, range=max-min||1;
-  const pts=data.map((d,i)=>`${(i/(data.length-1))*W},${H-((d.latency-min)/range)*H}`);
-  const last=vals[vals.length-1];
-  const color=last<100?"#4ecdc4":last<300?"#f5c542":"#f25c54";
-  const lastPt=pts[pts.length-1].split(",");
+
+  const vals = data.map(d => d.latency);
+  const min = Math.max(0, Math.min(...vals) - 10);
+  const max = Math.max(...vals) + 10;
+  const range = max - min || 1;
+  const toY = (v: number) => H - ((v - min) / range) * H;
+  const toX = (i: number) => data.length < 2 ? W / 2 : (i / (data.length - 1)) * W;
+
+  const pts = data.map((d, i) => `${toX(i)},${toY(d.latency)}`);
+  const last = vals[vals.length - 1];
+  const color = last < 100 ? "#4ecdc4" : last < 300 ? "#f5c542" : "#f25c54";
+  const lastX = toX(data.length - 1);
+  const lastY = toY(last);
+
+  // Y-axis labels
+  const yLabels = [];
+  for (let i = 0; i <= GRID_ROWS; i++) {
+    const v = Math.round(min + (1 - i / GRID_ROWS) * range);
+    yLabels.push(
+      <div key={i} style={{ position:"absolute", right:0, top:`${(i/GRID_ROWS)*100}%`, transform:"translateY(-50%)", fontFamily:"var(--font-mono)", fontSize:8, color:"var(--text-faint)", pointerEvents:"none", paddingRight:4 }}>
+        {v}ms
+      </div>
+    );
+  }
+
+  const polyPts = data.length < 2
+    ? `0,${toY(last)} ${W},${toY(last)}`
+    : pts.join(" ");
+
   return (
-    <div style={{ position: "relative" }}>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width:"100%", height:60, display:"block", overflow:"visible" }} preserveAspectRatio="none">
-        <defs>
-          <linearGradient id="glg" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity="0.3"/>
-            <stop offset="100%" stopColor={color} stopOpacity="0.02"/>
-          </linearGradient>
-        </defs>
-        <polygon points={`0,${H} ${pts.join(" ")} ${W},${H}`} fill="url(#glg)"/>
-        <polyline points={pts.join(" ")} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-        <circle cx={lastPt[0]} cy={lastPt[1]} r="3" fill={color}/>
-      </svg>
-      <div style={{ position:"absolute", right:0, top:0, fontFamily:"var(--font-mono)", fontSize:9, color:"var(--text-faint)", display:"flex", flexDirection:"column", justifyContent:"space-between", height:"100%", pointerEvents:"none" }}>
-        <span>{Math.round(max)}ms</span><span>{Math.round(min)}ms</span>
+    <div style={{ position:"relative" }}>
+      <div style={{ position:"relative", background:"var(--graph-bg)", borderRadius:4, overflow:"hidden" }}>
+        <svg viewBox={`0 0 ${W} ${H}`} style={{ width:"100%", height:120, display:"block", overflow:"visible" }} preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="glg" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={color} stopOpacity="0.25"/>
+              <stop offset="100%" stopColor={color} stopOpacity="0"/>
+            </linearGradient>
+          </defs>
+          {gridLines}
+          <polygon points={`0,${H} ${polyPts} ${W},${H}`} fill="url(#glg)"/>
+          <polyline points={polyPts} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          <circle cx={lastX} cy={lastY} r="3" fill={color} stroke="var(--card-bg)" strokeWidth="1.5"/>
+        </svg>
+        {yLabels}
       </div>
     </div>
   );
@@ -107,9 +143,11 @@ export default function StatsPage() {
   const [lastUp, setLastUp]   = useState<Date | null>(null);
   const [history, setHistory] = useState<DataPoint[]>([]);
   const timer = useRef<NodeJS.Timeout | null>(null);
-
+  const busy = useRef(false);
 
   const fetch_ = useCallback(async (silent = false) => {
+    if (busy.current) return;
+    busy.current = true;
     if (!silent) setLoading(true);
     try {
       const r = await fetch("/api/stats", { cache: "no-store" });
@@ -121,8 +159,16 @@ export default function StatsPage() {
         return [...prev, { time: now, latency: d.dbLatency }].slice(-20);
       });
     } catch { setError(true); }
-    finally { if (!silent) setLoading(false); }
+    finally { if (!silent) setLoading(false); busy.current = false; }
   }, []);
+
+  const manualRefresh = useCallback(() => {
+    if (busy.current) return;
+    // reset 30s timer on manual refresh
+    if (timer.current) clearInterval(timer.current);
+    fetch_();
+    timer.current = setInterval(() => fetch_(true), 30000);
+  }, [fetch_]);
 
   useEffect(() => {
     fetch_();
@@ -153,7 +199,7 @@ const healthy = stats && stats.dbLatency < 300;
               <div style={{ fontFamily:"var(--font-mono)", fontSize:10, color:"var(--text-faint)", marginTop:5 }}>
                 {lastUp ? `Updated ${lastUp.toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit",second:"2-digit"})}` : "Fetching..."}
                 {" · "}
-                <span onClick={()=>fetch_()} style={{ color:"var(--teal)", cursor:"pointer", textDecoration:"underline", textUnderlineOffset:3 }}>Refresh</span>
+                <span onClick={manualRefresh} style={{ color:"var(--teal)", cursor:"pointer", textDecoration:"underline", textUnderlineOffset:3 }}>Refresh</span>
               </div>
             </div>
             <div style={{ display:"flex", alignItems:"center", gap:8, border:"2px solid var(--border-color)", borderRadius:10, padding:"8px 16px", background:"var(--card-bg)", boxShadow:"3px 3px 0 var(--border-color)" }}>
@@ -206,7 +252,7 @@ const healthy = stats && stats.dbLatency < 300;
                     <span style={{ fontFamily:"var(--font-mono)", fontSize:9, color:"var(--text-faint)" }}>LIVE</span>
                   </div>
                 </div>
-                <div style={{ padding:"14px 20px 12px" }}>
+                <div style={{ padding:"14px 16px 12px" }}>
                   <div style={{ marginBottom:14 }}>
                     <span style={{ fontFamily:"var(--font-mono)", fontSize:26, fontWeight:700, color: stats.dbLatency<100?"var(--teal)":stats.dbLatency<300?"#f5c542":"#f25c54" }}>
                       {stats.dbLatency}
@@ -233,7 +279,7 @@ const healthy = stats && stats.dbLatency < 300;
                   {stats.recentSnippets.map((snip, i) => {
                     const cat = CAT_COLORS[snip.category] ?? CAT_COLORS.Other;
                     return (
-                      <a key={snip.id} href={`/snippet/${snip.id}`} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"0 20px", gap:12, textDecoration:"none", flex:1, minHeight:48, borderBottom: i<stats.recentSnippets.length-1?"1px solid var(--divider)":"none", background:"transparent", transition:"background .12s" }}
+                      <a key={snip.id} href={`/code?v=${snip.filename}`} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"0 20px", gap:12, textDecoration:"none", flex:1, minHeight:48, borderBottom: i<stats.recentSnippets.length-1?"1px solid var(--divider)":"none", background:"transparent", transition:"background .12s" }}
                         onMouseOver={e=>(e.currentTarget.style.background="var(--hover-bg)")}
                         onMouseOut={e=>(e.currentTarget.style.background="transparent")}
                       >
@@ -287,6 +333,8 @@ const healthy = stats && stats.dbLatency < 300;
       </main>
       <style suppressHydrationWarning>{`
         @media (max-width: 700px) { .stats-main-grid { grid-template-columns: 1fr !important; } }
+        :root { --graph-bg: rgba(255,255,255,0.02); --grid-line: rgba(255,255,255,0.06); }
+        [data-theme="light"] { --graph-bg: rgba(0,0,0,0.02); --grid-line: rgba(0,0,0,0.08); }
         @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
       `}</style>
     </>
