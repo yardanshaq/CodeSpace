@@ -1,50 +1,93 @@
-import { NextResponse } from "next/server";
-import { getSession, deleteSession, clearSessionCookie, COOKIE_NAME } from "@/lib/auth";
+import { cookies } from "next/headers";
+import { createHash, randomBytes } from "crypto";
+import { prisma } from "@/lib/prisma";
+import { redis } from "@/lib/redis";
 
-export const dynamic = "force-dynamic";
+export interface SessionPayload {
+  id: string;
+  username: string;
+  email?: string | null;
+  role: "SUPERADMIN" | "ADMIN" | "MEMBER";
+}
 
-// GET — cek session saat ini
-// Jika session tidak valid / expired, otomatis clear cookie
-// sehingga browser tidak perlu hapus manual (fix untuk iPhone)
-export async function GET() {
+export const COOKIE_NAME = "sid";
+const SESSION_TTL_DAYS = 7;
+const SESSION_CACHE_TTL = 30;
+
+function hashToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+export async function createSession(
+  admin: SessionPayload,
+  ip?: string,
+  userAgent?: string
+): Promise<string> {
+  const rawToken    = randomBytes(32).toString("hex");
+  const hashedToken = hashToken(rawToken);
+  const expiresAt   = new Date(Date.now() + SESSION_TTL_DAYS * 24 * 60 * 60 * 1000);
+
+  await prisma.session.create({
+    data: { token: hashedToken, adminId: admin.id, ip: ip ?? null, userAgent: userAgent ?? null, expiresAt },
+  });
+
+  await redis.set(`session:${hashedToken}`, admin, { ex: SESSION_CACHE_TTL }).catch(() => {});
+  return rawToken;
+}
+
+export async function getSession(): Promise<SessionPayload | null> {
+  const cookieStore = cookies();
+  const rawToken    = cookieStore.get(COOKIE_NAME)?.value;
+  if (!rawToken || rawToken.length !== 64) return null;
+
+  const hashedToken = hashToken(rawToken);
+  const cacheKey    = `session:${hashedToken}`;
+
   try {
-    const session = await getSession();
+    const cached = await redis.get<SessionPayload>(cacheKey);
+    if (cached) return cached;
+  } catch {}
 
-    if (!session) {
-      // Session tidak ditemukan di DB (expired atau tidak valid)
-      // Clear cookie di browser supaya tidak stuck redirect terus
-      const response = NextResponse.json({ authenticated: false }, { status: 200 });
-      clearSessionCookie(response);
-      return response;
-    }
-
-    return NextResponse.json({
-      authenticated: true,
-      user: {
-        id:       session.id,
-        username: session.username,
-        email:    session.email,
-        role:     session.role,
-      },
+  try {
+    const session = await prisma.session.findUnique({
+      where:   { token: hashedToken },
+      include: { admin: { select: { id: true, username: true, email: true, role: true } } },
     });
-  } catch (error) {
-    console.error(error);
-    // Kalau error (misal DB down), clear cookie juga supaya tidak loop
-    const response = NextResponse.json({ authenticated: false }, { status: 200 });
-    clearSessionCookie(response);
-    return response;
+    if (!session) return null;
+    if (session.expiresAt < new Date()) {
+      await prisma.session.delete({ where: { token: hashedToken } }).catch(() => {});
+      return null;
+    }
+    const payload: SessionPayload = {
+      id: session.admin.id, username: session.admin.username,
+      email: session.admin.email,
+      role: session.admin.role as SessionPayload["role"],
+    };
+    await redis.set(cacheKey, payload, { ex: SESSION_CACHE_TTL }).catch(() => {});
+    return payload;
+  } catch {
+    return null;
   }
 }
 
-// POST — logout
-export async function POST() {
-  try {
-    await deleteSession();
-    const response = NextResponse.json({ success: true });
-    clearSessionCookie(response);
-    return response;
-  } catch (error) {
-    console.error(error);
-    return NextResponse.json({ error: "Server error" }, { status: 500 });
-  }
+export async function deleteSession(): Promise<void> {
+  const cookieStore = cookies();
+  const rawToken    = cookieStore.get(COOKIE_NAME)?.value;
+  if (!rawToken) return;
+  const hashedToken = hashToken(rawToken);
+  await redis.del(`session:${hashedToken}`).catch(() => {});
+  await prisma.session.delete({ where: { token: hashedToken } }).catch(() => {});
+}
+
+export async function deleteAllSessions(adminId: string): Promise<void> {
+  await prisma.session.deleteMany({ where: { adminId } });
+}
+
+export { SESSION_TTL_DAYS };
+
+export function clearSessionCookie(response: import("next/server").NextResponse) {
+  response.cookies.set(COOKIE_NAME, "", {
+    httpOnly: true, secure: process.env.NODE_ENV === "production",
+    sameSite: "strict", maxAge: 0, path: "/",
+  });
 }
