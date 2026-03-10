@@ -6,6 +6,7 @@ import { redis } from "@/lib/redis";
 export interface SessionPayload {
   id: string;
   username: string;
+  email?: string | null;
   role: "SUPERADMIN" | "ADMIN" | "MEMBER";
 }
 
@@ -50,7 +51,7 @@ export async function getSession(): Promise<SessionPayload | null> {
   try {
     const session = await prisma.session.findUnique({
       where:   { token: hashedToken },
-      include: { admin: { select: { id: true, username: true, role: true } } },
+      include: { admin: { select: { id: true, username: true, email: true, role: true } } },
     });
     if (!session) return null;
     if (session.expiresAt < new Date()) {
@@ -59,6 +60,7 @@ export async function getSession(): Promise<SessionPayload | null> {
     }
     const payload: SessionPayload = {
       id: session.admin.id, username: session.admin.username,
+      email: session.admin.email,
       role: session.admin.role as SessionPayload["role"],
     };
     await redis.set(cacheKey, payload, { ex: SESSION_CACHE_TTL }).catch(() => {});
