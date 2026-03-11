@@ -4,18 +4,25 @@ import os from "os";
 
 export const runtime = "nodejs";
 
-let _requestCounter = 0;
-function incrementRequestCount() { _requestCounter++; }
-function drainRequestCount() { const c = _requestCounter; _requestCounter = 0; return c; }
+// globalThis persist selama process hidup — tidak reset tiap request
+const g = globalThis as { _serverStart?: number; _reqCounter?: number };
+if (!g._serverStart)  g._serverStart  = Date.now();
+if (!g._reqCounter)   g._reqCounter   = 0;
+
+function drainRequestCount() {
+  const c = g._reqCounter ?? 0;
+  g._reqCounter = 0;
+  return c;
+}
 
 export async function GET() {
+  g._reqCounter = (g._reqCounter ?? 0) + 1;
+
   try {
-    // Ping latency — 1 query ringan, bukan 6 query sekaligus
     const pingStart = Date.now();
     await prisma.$queryRaw`SELECT 1`;
     const dbLatency = Date.now() - pingStart;
 
-    // Data queries — jalan paralel tapi tidak mempengaruhi dbLatency
     const [snippetCount, userCount, totalViews, totalLikes, totalComments, recentSnippets] =
       await Promise.all([
         prisma.snippet.count({ where: { isPublic: true } }),
@@ -38,16 +45,17 @@ export async function GET() {
     const loadAvg = os.loadavg();
 
     return NextResponse.json({
-      snippets:      snippetCount,
-      users:         userCount,
-      views:         totalViews._sum.views ?? 0,
-      likes:         totalLikes,
-      comments:      totalComments,
-      dbLatency,                         // ← sekarang murni ping latency
-      requestDelta:  drainRequestCount(),
+      snippets:     snippetCount,
+      users:        userCount,
+      views:        totalViews._sum.views ?? 0,
+      likes:        totalLikes,
+      comments:     totalComments,
+      dbLatency,
+      requestDelta: drainRequestCount(),
       recentSnippets,
-      uptime:        Math.floor(process.uptime()),
-      timestamp:     new Date().toISOString(),
+      // Uptime dihitung dari globalThis — akurat di production
+      uptime:       Math.floor((Date.now() - (g._serverStart ?? Date.now())) / 1000),
+      timestamp:    new Date().toISOString(),
       hardware: {
         cpu:         cpus[0]?.model ?? "Unknown",
         cpuCores:    cpus.length,
