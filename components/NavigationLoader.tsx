@@ -72,11 +72,12 @@ export default function NavigationLoader() {
           40% { transform:translateY(-10px);opacity:1 }
         }
         @keyframes cs-logo-entrance {
-          0%  { transform:rotate(0deg) scale(1); }
-          35% { transform:rotate(360deg) scale(1.08); }
-          52% { transform:rotate(360deg) scale(0.95); }
-          66% { transform:rotate(360deg) scale(1.02); }
-          78%,100% { transform:rotate(360deg) scale(1); }
+          0%   { transform: translateZ(0) rotate(0deg)   scale(1); }
+          35%  { transform: translateZ(0) rotate(360deg) scale(1.08); }
+          52%  { transform: translateZ(0) rotate(360deg) scale(0.95); }
+          66%  { transform: translateZ(0) rotate(360deg) scale(1.02); }
+          78%  { transform: translateZ(0) rotate(360deg) scale(1); }
+          100% { transform: translateZ(0) rotate(360deg) scale(1); }
         }
         [data-theme="dark"] .cs-loader-logo { filter:invert(1); }
       `}</style>
