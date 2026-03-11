@@ -4,6 +4,7 @@ import { redis } from "@/lib/redis";
 import os from "os";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const SERVER_START_KEY = "codespace:server_start";
 const REQ_COUNTER_KEY  = "codespace:req_counter";
