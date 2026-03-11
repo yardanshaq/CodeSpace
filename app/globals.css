@@ -49,9 +49,9 @@
   --text-faint:   #666666;
   --border-color: #444444;
   --border:       2.5px solid var(--border-color);
-  --shadow:       4px 4px 0px #000;
-  --shadow-lg:    6px 6px 0px #000;
-  --shadow-sm:    2px 2px 0px #000;
+  --shadow:       4px 4px 0px #333333;
+  --shadow-lg:    6px 6px 0px #333333;
+  --shadow-sm:    2px 2px 0px #333333;
   --teal:         #3bbdb5;
   --yellow:       #e6c200;
   --red:          #e04c44;
@@ -94,7 +94,6 @@ body:has(.cs-loader-logo)::-webkit-scrollbar {
 }
 
 
-/* ── NAVBAR ─────────────────────────────────────────────────────────────── */
 /* ── NAVBAR ──────────────────────────────────────────────────────────────── */
 /* Floating pill — all styling is inline in Navbar.tsx */
 /* Legacy classes kept for compat */
@@ -413,12 +412,12 @@ body:has(.cs-loader-logo)::-webkit-scrollbar {
   background: var(--surface2);
   color: var(--text);
   outline: none;
-  transition: border-color 0.18s, box-shadow 0.18s, background 0.18s;
+  transition: box-shadow 0.18s, background 0.18s;
   box-sizing: border-box;
 }
 .input-field:focus {
-  border-color: var(--teal);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--teal) 12%, transparent);
+  border-color: var(--border-color);
+  box-shadow: var(--shadow-sm);
   background: var(--surface);
 }
 .input-field:hover:not(:focus) { border-color: var(--text-muted); }
@@ -805,20 +804,18 @@ body:has(.cs-loader-logo)::-webkit-scrollbar {
   border-width: 0;
 }
 
-/* Focus visible for keyboard navigation */
+/* Focus visible — no teal ring on any element */
 :focus-visible {
-  outline: 2px solid var(--teal);
-  outline-offset: 2px;
+  outline: none;
 }
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 2px solid var(--teal);
-  outline-offset: 2px;
-  border-radius: 4px;
+  outline: none;
 }
+
 /* ── PAGE LOADER ─────────────────────────────────────────────────────────── */
 @keyframes cs-loader-bounce {
   0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
