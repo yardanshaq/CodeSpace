@@ -1,30 +1,34 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { redis } from "@/lib/redis";
 import os from "os";
 
 export const runtime = "nodejs";
 
-// globalThis persist selama process hidup — tidak reset tiap request
-const g = globalThis as { _serverStart?: number; _reqCounter?: number };
-if (!g._serverStart)  g._serverStart  = Date.now();
-if (!g._reqCounter)   g._reqCounter   = 0;
+const SERVER_START_KEY = "codespace:server_start";
+const REQ_COUNTER_KEY  = "codespace:req_counter";
 
-function drainRequestCount() {
-  const c = g._reqCounter ?? 0;
-  g._reqCounter = 0;
-  return c;
+// Simpan waktu start ke Redis saat pertama kali — persist across workers
+async function getOrSetStartTime(): Promise<number> {
+  const existing = await redis.get<number>(SERVER_START_KEY);
+  if (existing) return existing;
+  const now = Date.now();
+  await redis.set(SERVER_START_KEY, now); // tanpa expire — permanen
+  return now;
 }
 
 export async function GET() {
-  g._reqCounter = (g._reqCounter ?? 0) + 1;
-
   try {
+    // Increment request counter di Redis (atomic)
+    const reqCount = await redis.incr(REQ_COUNTER_KEY);
+
     const pingStart = Date.now();
     await prisma.$queryRaw`SELECT 1`;
     const dbLatency = Date.now() - pingStart;
 
-    const [snippetCount, userCount, totalViews, totalLikes, totalComments, recentSnippets] =
+    const [startTime, snippetCount, userCount, totalViews, totalLikes, totalComments, recentSnippets] =
       await Promise.all([
+        getOrSetStartTime(),
         prisma.snippet.count({ where: { isPublic: true } }),
         prisma.admin.count(),
         prisma.snippet.aggregate({ _sum: { views: true } }),
@@ -37,6 +41,11 @@ export async function GET() {
           where: { isPublic: true },
         }),
       ]);
+
+    const uptimeSeconds = Math.floor((Date.now() - startTime) / 1000);
+
+    // Reset counter setelah dibaca (untuk requestDelta per 30s)
+    await redis.set(REQ_COUNTER_KEY, 0);
 
     const mem     = process.memoryUsage();
     const total   = os.totalmem();
@@ -51,10 +60,9 @@ export async function GET() {
       likes:        totalLikes,
       comments:     totalComments,
       dbLatency,
-      requestDelta: drainRequestCount(),
+      requestDelta: reqCount,
       recentSnippets,
-      // Uptime dihitung dari globalThis — akurat di production
-      uptime:       Math.floor((Date.now() - (g._serverStart ?? Date.now())) / 1000),
+      uptime:       uptimeSeconds,
       timestamp:    new Date().toISOString(),
       hardware: {
         cpu:         cpus[0]?.model ?? "Unknown",
