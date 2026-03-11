@@ -115,6 +115,32 @@ export default function HomePage() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
+  // ── Clamp dropdown within viewport (works for all screen sizes) ──────────
+  useEffect(() => {
+    const MARGIN = 12;
+    const refs = [sortRef, filterRef, catFilterRef];
+    refs.forEach(ref => {
+      if (!ref.current) return;
+      const panel = ref.current.querySelector<HTMLElement>('.dropdown-panel');
+      if (!panel) return;
+      panel.style.left  = '';
+      panel.style.right = '';
+      const rect = panel.getBoundingClientRect();
+      const vw   = window.innerWidth;
+      if (rect.right > vw - MARGIN) {
+        panel.style.left  = 'auto';
+        panel.style.right = '0';
+        const r2 = panel.getBoundingClientRect();
+        if (r2.left < MARGIN) {
+          panel.style.right = 'auto';
+          panel.style.left  = `${MARGIN - ref.current.getBoundingClientRect().left}px`;
+        }
+      } else if (rect.left < MARGIN) {
+        panel.style.left = `${MARGIN - ref.current.getBoundingClientRect().left}px`;
+      }
+    });
+  }, [showSort, showFilter, showCatFilter]);
+
   useEffect(() => {
     const onScroll = () => setShowScrollTop(window.scrollY > 400);
     window.addEventListener("scroll", onScroll, { passive: true });
@@ -871,14 +897,7 @@ export default function HomePage() {
           }
           .post-btn-label { display: none; }
 
-          /* Di mobile semua tombol ada di sisi KIRI layar,
-             jadi semua dropdown harus rata kiri juga */
-          .dropdown-panel,
-          .dropdown-panel-sort,
-          .dropdown-panel-right {
-            left: 0 !important;
-            right: auto !important;
-          }
+          /* Posisi dropdown di-handle oleh JS clamp effect */
         }
 
         @media (max-width: 400px) {
