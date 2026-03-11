@@ -6,6 +6,7 @@ import LoaderContent from "@/components/LoaderContent";
 
 interface PageLoaderProps {
   timeoutMs?: number;
+  label?: string;
 }
 
 export default function PageLoader({ timeoutMs = 15000 }: PageLoaderProps) {
