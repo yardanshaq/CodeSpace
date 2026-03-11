@@ -184,20 +184,27 @@ export default function HomePage() {
   }, [fetchSnippets]);
 
   useEffect(() => {
-    if (!gridRef.current) return;
-    const cards = gridRef.current.querySelectorAll<HTMLElement>('.snippet-card');
+    if (!gridRef.current || snippets.length === 0) return;
+    const cards = Array.from(gridRef.current.querySelectorAll<HTMLElement>('.snippet-card'));
+
+    // Fallback: kalau observer tidak fire dalam 1.5s, paksa semua visible
+    const fallback = setTimeout(() => {
+      cards.forEach(c => c.classList.add('visible'));
+    }, 1500);
+
     const obs = new IntersectionObserver((entries) => {
       entries.forEach(entry => {
         if (entry.isIntersecting) {
           const el = entry.target as HTMLElement;
-          const idx = Array.from(cards).indexOf(el);
+          const idx = cards.indexOf(el);
           setTimeout(() => el.classList.add('visible'), (idx % 3) * 60);
           obs.unobserve(el);
         }
       });
-    }, { threshold: 0.08 });
-    cards.forEach((card: HTMLElement) => obs.observe(card));
-    return () => obs.disconnect();
+    }, { threshold: 0, rootMargin: '0px 0px -20px 0px' });
+
+    cards.forEach(card => obs.observe(card));
+    return () => { obs.disconnect(); clearTimeout(fallback); };
   }, [snippets]);
 
   const toggleAuthor   = (a: string) =>
