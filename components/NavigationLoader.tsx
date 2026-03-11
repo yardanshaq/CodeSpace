@@ -32,11 +32,13 @@ export default function NavigationLoader() {
     return () => { _setVisible = null; };
   }, []);
 
-  // Hide loader when pathname actually changes (navigation complete)
+  // When pathname changes, give PageLoader 80ms to mount and take over.
+  // If nothing takes over (pages without PageLoader), hide automatically.
   useEffect(() => {
     if (pathname !== prevPath.current) {
       prevPath.current = pathname;
-      setVisible(false);
+      const t = setTimeout(() => setVisible(false), 80);
+      return () => clearTimeout(t);
     }
   }, [pathname]);
 

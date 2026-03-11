@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { stopNavigationLoader } from "@/components/NavigationLoader";
 interface PageLoaderProps {
   timeoutMs?: number;
   label?: string;
@@ -7,11 +8,11 @@ interface PageLoaderProps {
 export default function PageLoader({ timeoutMs = 15000, label }: PageLoaderProps) {
   const [timedOut, setTimedOut] = useState(false);
   useEffect(() => {
+    // Hide NavigationLoader immediately — PageLoader takes over from here
+    stopNavigationLoader();
     const timer = setTimeout(() => setTimedOut(true), timeoutMs);
     return () => {
       clearTimeout(timer);
-      // Dispatch event saat loading screen selesai (unmount)
-      // Navbar mendengarkan event ini untuk trigger animasi logo
       window.dispatchEvent(new CustomEvent("cs-loader-done"));
     };
   }, [timeoutMs]);
