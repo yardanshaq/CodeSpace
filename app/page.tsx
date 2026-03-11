@@ -115,16 +115,28 @@ export default function HomePage() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  // ── Clamp dropdown within viewport (works for all screen sizes) ──────────
+  // ── Clamp dropdown: posisi horizontal + dynamic max-height ────────────
   useEffect(() => {
-    const MARGIN = 12;
+    const MARGIN     = 12;
+    const BOTTOM_GAP = 16;
     const refs = [sortRef, filterRef, catFilterRef];
     refs.forEach(ref => {
       if (!ref.current) return;
       const panel = ref.current.querySelector<HTMLElement>('.dropdown-panel');
       if (!panel) return;
-      panel.style.left  = '';
-      panel.style.right = '';
+
+      // 1. Reset
+      panel.style.left      = '';
+      panel.style.right     = '';
+      panel.style.maxHeight = '';
+
+      // 2. Dynamic max-height = ruang tersisa di bawah tombol
+      const btnRect    = ref.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - btnRect.bottom - MARGIN - BOTTOM_GAP;
+      panel.style.maxHeight = `${Math.max(120, spaceBelow)}px`;
+      panel.style.overflowY = 'auto';
+
+      // 3. Clamp horizontal agar tidak keluar viewport
       const rect = panel.getBoundingClientRect();
       const vw   = window.innerWidth;
       if (rect.right > vw - MARGIN) {
@@ -869,8 +881,13 @@ export default function HomePage() {
           min-width: 200px;
           max-height: 60vh;
           overflow-y: auto;
+          /* iOS momentum scroll */
+          -webkit-overflow-scrolling: touch;
+          /* Prevent page scroll bleed-through */
+          overscroll-behavior: contain;
+          /* Allow vertical touch drag inside panel */
+          touch-action: pan-y;
           z-index: 300;
-          /* Jangan biarkan keluar dari viewport kanan/kiri */
           max-width: min(260px, calc(100vw - 24px));
         }
         .dropdown-panel-sort  { left: 0; }
