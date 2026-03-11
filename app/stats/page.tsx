@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import Navbar from "@/components/Navbar";
-
 import PageLoader from "@/components/PageLoader";
 
 interface Hardware {
@@ -19,8 +18,8 @@ interface ServerStats {
   recentSnippets: { id: string; title: string; category: string; createdAt: string; views: number; filename: string }[];
   timestamp: string;
 }
-interface DataPoint   { time: string; latency: number; [key: string]: unknown; }
-interface RequestPoint { time: string; count: number; [key: string]: unknown; }
+interface DataPoint    { time: string; latency: number; [key: string]: unknown; }
+interface RequestPoint { time: string; count: number;   [key: string]: unknown; }
 
 const CAT_COLORS: Record<string, { bg: string; text: string }> = {
   AI: { bg: "#f5c542", text: "#000" }, Anime: { bg: "#f472b6", text: "#000" },
@@ -42,9 +41,11 @@ function DualGraphPanel({ latencyData, reqData, latencyColor }: {
   const W = 500, H = 160;
   const GRID_COLS = 10, GRID_ROWS = 5;
   const PAD_L = 42, PAD_R = 42;
+  // ─── FIX: expand viewBox bottom to include x-axis labels ──────────────────
+  const PAD_BOTTOM = 26;
+  const TOTAL_H    = H + PAD_BOTTOM;
   const IW = W - PAD_L - PAD_R;
 
-  // Latency (left axis)
   const lVals  = latencyData.map(d => d.latency);
   const lMin   = Math.max(0, (Math.min(...lVals) || 0) - 5);
   const lMax   = Math.max(...lVals, lMin + 1) + 5;
@@ -52,7 +53,6 @@ function DualGraphPanel({ latencyData, reqData, latencyColor }: {
   const toYL   = (v: number) => H - ((v - lMin) / lRange) * H;
   const toX    = (i: number, len: number) => PAD_L + (len < 2 ? IW : (i / (len - 1)) * IW);
 
-  // Requests (right axis)
   const rVals  = reqData.map(d => d.count);
   const rMin   = 0;
   const rMax   = Math.max(...rVals, 1) + 2;
@@ -71,31 +71,28 @@ function DualGraphPanel({ latencyData, reqData, latencyColor }: {
     gridLines.push(<line key={`v${i}`} x1={x} y1="0" x2={x} y2={H} stroke="var(--border-color)" strokeWidth="0.8" strokeDasharray="3,3"/>);
   }
 
-  // Left Y labels (latency)
   const leftLabels = Array.from({length: GRID_ROWS + 1}, (_, i) => {
     const v = Math.round(lMin + (1 - i / GRID_ROWS) * lRange);
     const y = (i / GRID_ROWS) * H;
     return <text key={i} x={PAD_L - 4} y={y} textAnchor="end" dominantBaseline="middle" style={{ fontFamily:"var(--font-mono)", fontSize:"8px", fill:"var(--text-faint)" }}>{v}</text>;
   });
 
-  // Right Y labels (requests)
   const rightLabels = Array.from({length: GRID_ROWS + 1}, (_, i) => {
     const v = Math.round(rMin + (1 - i / GRID_ROWS) * rRange);
     const y = (i / GRID_ROWS) * H;
     return <text key={i} x={W - PAD_R + 4} y={y} textAnchor="start" dominantBaseline="middle" style={{ fontFamily:"var(--font-mono)", fontSize:"8px", fill:"var(--text-faint)" }}>{v}</text>;
   });
 
-  // Latency line
   let latencyEl = null;
   if (latencyData.length > 0) {
-    const pts = latencyData.map((d, i) => `${toX(i, latencyData.length)},${toYL(d.latency)}`).join(" ");
+    const pts   = latencyData.map((d, i) => `${toX(i, latencyData.length)},${toYL(d.latency)}`).join(" ");
     const lastX = toX(latencyData.length - 1, latencyData.length);
     const lastY = toYL(lVals[lVals.length - 1] ?? 0);
     latencyEl = (
       <>
         <defs>
           <linearGradient id="grad-lat" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={latencyColor} stopOpacity="0.18"/>
+            <stop offset="0%"   stopColor={latencyColor} stopOpacity="0.18"/>
             <stop offset="100%" stopColor={latencyColor} stopOpacity="0"/>
           </linearGradient>
           <clipPath id="clip-graph">
@@ -109,10 +106,9 @@ function DualGraphPanel({ latencyData, reqData, latencyColor }: {
     );
   }
 
-  // Request line
   let reqEl = null;
   if (reqData.length > 0) {
-    const pts = reqData.map((d, i) => `${toX(i, reqData.length)},${toYR(d.count)}`).join(" ");
+    const pts   = reqData.map((d, i) => `${toX(i, reqData.length)},${toYR(d.count)}`).join(" ");
     const lastX = toX(reqData.length - 1, reqData.length);
     const lastY = toYR(rVals[rVals.length - 1] ?? 0);
     reqEl = (
@@ -123,14 +119,21 @@ function DualGraphPanel({ latencyData, reqData, latencyColor }: {
     );
   }
 
-  // X axis time labels
   const allTimes = latencyData.length > 0 ? latencyData : reqData;
-  const xFirst = allTimes[0]?.time ?? "";
-  const xLast  = allTimes[allTimes.length - 1]?.time ?? "";
+  const xFirst   = allTimes[0]?.time ?? "";
+  const xLast    = allTimes[allTimes.length - 1]?.time ?? "";
 
   return (
     <div>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width:"100%", height:180, display:"block", overflow:"visible" }} preserveAspectRatio="none">
+      {/*
+        viewBox now includes PAD_BOTTOM so time labels live INSIDE the SVG,
+        not clipped or crammed against the edge.
+      */}
+      <svg
+        viewBox={`0 0 ${W} ${TOTAL_H}`}
+        style={{ width: "100%", height: 200, display: "block" }}
+        preserveAspectRatio="none"
+      >
         {gridLines}
         {leftLabels}
         {rightLabels}
@@ -142,9 +145,17 @@ function DualGraphPanel({ latencyData, reqData, latencyColor }: {
             Waiting for data...
           </text>
         )}
-        {/* Axis labels */}
-        <text x={PAD_L - 4} y={H + 14} textAnchor="start" style={{ fontFamily:"var(--font-mono)", fontSize:"7px", fill:"var(--text-faint)" }}>{xFirst}</text>
-        <text x={W - PAD_R + 4} y={H + 14} textAnchor="end" style={{ fontFamily:"var(--font-mono)", fontSize:"7px", fill:"var(--text-faint)" }}>{xLast}</text>
+        {/* X-axis labels — comfortably inside the expanded viewBox */}
+        <text
+          x={PAD_L} y={H + 16}
+          textAnchor="start"
+          style={{ fontFamily:"var(--font-mono)", fontSize:"7px", fill:"var(--text-faint)" }}
+        >{xFirst}</text>
+        <text
+          x={W - PAD_R} y={H + 16}
+          textAnchor="end"
+          style={{ fontFamily:"var(--font-mono)", fontSize:"7px", fill:"var(--text-faint)" }}
+        >{xLast}</text>
       </svg>
     </div>
   );
@@ -180,10 +191,10 @@ export default function StatsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState(false);
   const [lastUp, setLastUp]   = useState<Date | null>(null);
-  const [history, setHistory]         = useState<DataPoint[]>([]);
-  const [reqHistory, setReqHistory]   = useState<RequestPoint[]>([]);
+  const [history, setHistory]       = useState<DataPoint[]>([]);
+  const [reqHistory, setReqHistory] = useState<RequestPoint[]>([]);
   const timer = useRef<NodeJS.Timeout | null>(null);
-  const busy = useRef(false);
+  const busy  = useRef(false);
 
   const fetch_ = useCallback(async (silent = false) => {
     if (busy.current) return;
@@ -198,12 +209,11 @@ export default function StatsPage() {
       setHistory(prev    => [...prev, { time: now, latency: d.dbLatency }].slice(-20));
       setReqHistory(prev => [...prev, { time: now, count: d.requestDelta ?? 0 }].slice(-20));
     } catch { setError(true); }
-    finally { if (!silent) setLoading(false); busy.current = false; }
+    finally  { if (!silent) setLoading(false); busy.current = false; }
   }, []);
 
   const manualRefresh = useCallback(() => {
     if (busy.current) return;
-    // reset 30s timer on manual refresh
     if (timer.current) clearInterval(timer.current);
     fetch_();
     timer.current = setInterval(() => fetch_(true), 30000);
@@ -215,7 +225,7 @@ export default function StatsPage() {
     return () => { if (timer.current) clearInterval(timer.current); };
   }, [fetch_]);
 
-const healthy = stats && stats.dbLatency < 300;
+  const healthy     = stats && stats.dbLatency < 300;
   const statusColor = error ? "#f25c54" : healthy ? "var(--teal)" : "#f5c542";
 
   return (
@@ -278,77 +288,78 @@ const healthy = stats && stats.dbLatency < 300;
             {/* Activity + Hardware */}
             <div style={{ display:"grid", gridTemplateColumns:"1fr 290px", gap:16, marginBottom:0 }} className="stats-main-grid">
 
-              {/* Left col: Activity Flow + Recent Snippets */}
+              {/* Left col */}
               <div style={{ display:"flex", flexDirection:"column", gap:16, height:"100%" }}>
-              {/* Activity Flow */}
-              <div style={{ border:"2.5px solid var(--border-color)", borderRadius:12, background:"var(--card-bg)", boxShadow:"4px 4px 0 var(--border-color)", overflow:"hidden" }}>
-                <div style={{ padding:"14px 20px", borderBottom:"1.5px solid var(--border-color)", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-                  <div style={{ fontFamily:"var(--font-mono)", fontSize:9, fontWeight:700, letterSpacing:"0.14em", textTransform:"uppercase", color:"var(--text-muted)" }}>
-                    DB Latency  ·  Activity Flow
-                  </div>
-                  <div style={{ display:"flex", alignItems:"center", gap:5 }}>
-                    <div style={{ width:6, height:6, borderRadius:"50%", background:"var(--teal)", boxShadow:"0 0 5px var(--teal)" }}/>
-                    <span style={{ fontFamily:"var(--font-mono)", fontSize:9, color:"var(--text-faint)" }}>LIVE</span>
-                  </div>
-                </div>
-                <div style={{ padding:"14px 16px 16px" }}>
-                  {/* Legend + live values */}
-                  <div style={{ display:"flex", alignItems:"center", gap:20, marginBottom:12 }}>
-                    <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                      <div style={{ width:16, height:2.5, borderRadius:2, background:"var(--text)" }}/>
-                      <span style={{ fontFamily:"var(--font-mono)", fontSize:9, fontWeight:700, letterSpacing:"0.1em", textTransform:"uppercase", color:"var(--text-faint)" }}>REQUEST</span>
-                      <span style={{ fontFamily:"var(--font-mono)", fontSize:13, fontWeight:700, color:"var(--text)" }}>
-                        {reqHistory.length > 0 ? reqHistory[reqHistory.length-1].count : 0}
-                      </span>
-                      <span style={{ fontFamily:"var(--font-mono)", fontSize:9, color:"var(--text-faint)" }}>/ 30s</span>
-                    </div>
-                    <div style={{ width:1, height:16, background:"var(--divider)" }}/>
-                    <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                      <div style={{ width:16, height:2.5, borderRadius:2, background:stats.dbLatency<100?"#4ecdc4":stats.dbLatency<300?"#f5c542":"#f25c54" }}/>
-                      <span style={{ fontFamily:"var(--font-mono)", fontSize:9, fontWeight:700, letterSpacing:"0.1em", textTransform:"uppercase", color:"var(--text-faint)" }}>LATENCY</span>
-                      <span style={{ fontFamily:"var(--font-mono)", fontSize:13, fontWeight:700, color:stats.dbLatency<100?"#4ecdc4":stats.dbLatency<300?"#f5c542":"#f25c54" }}>
-                        {stats.dbLatency}
-                      </span>
-                      <span style={{ fontFamily:"var(--font-mono)", fontSize:9, color:"var(--text-faint)" }}>ms</span>
-                      <span style={{ fontFamily:"var(--font-mono)", fontSize:9, fontWeight:700, color:stats.dbLatency<100?"#4ecdc4":stats.dbLatency<300?"#f5c542":"#f25c54", letterSpacing:"0.06em" }}>
-                        {stats.dbLatency<100?"● EXCELLENT":stats.dbLatency<300?"● NORMAL":"● DEGRADED"}
-                      </span>
-                    </div>
-                  </div>
-                  <DualGraphPanel
-                    latencyData={history}
-                    reqData={reqHistory}
-                    latencyColor={stats.dbLatency<100?"#4ecdc4":stats.dbLatency<300?"#f5c542":"#f25c54"}
-                  />
-                </div>
-              </div>
 
-              {/* Recent Snippets */}
-              <div style={{ border:"2.5px solid var(--border-color)", borderRadius:12, background:"var(--card-bg)", boxShadow:"4px 4px 0 var(--border-color)", overflow:"hidden", flex:1, display:"flex", flexDirection:"column" }}>
-                <div style={{ padding:"14px 20px", borderBottom:"1.5px solid var(--border-color)", fontFamily:"var(--font-mono)", fontSize:9, fontWeight:700, letterSpacing:"0.14em", textTransform:"uppercase", color:"var(--text-muted)" }}>
-                  Recent Snippets
+                {/* Activity Flow */}
+                <div style={{ border:"2.5px solid var(--border-color)", borderRadius:12, background:"var(--card-bg)", boxShadow:"4px 4px 0 var(--border-color)", overflow:"hidden" }}>
+                  <div style={{ padding:"14px 20px", borderBottom:"1.5px solid var(--border-color)", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                    <div style={{ fontFamily:"var(--font-mono)", fontSize:9, fontWeight:700, letterSpacing:"0.14em", textTransform:"uppercase", color:"var(--text-muted)" }}>
+                      DB Latency  ·  Activity Flow
+                    </div>
+                    <div style={{ display:"flex", alignItems:"center", gap:5 }}>
+                      <div style={{ width:6, height:6, borderRadius:"50%", background:"var(--teal)", boxShadow:"0 0 5px var(--teal)" }}/>
+                      <span style={{ fontFamily:"var(--font-mono)", fontSize:9, color:"var(--text-faint)" }}>LIVE</span>
+                    </div>
+                  </div>
+                  <div style={{ padding:"14px 16px 16px" }}>
+                    {/* Legend + live values */}
+                    <div style={{ display:"flex", alignItems:"center", gap:20, marginBottom:12 }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                        <div style={{ width:16, height:2.5, borderRadius:2, background:"var(--text)" }}/>
+                        <span style={{ fontFamily:"var(--font-mono)", fontSize:9, fontWeight:700, letterSpacing:"0.1em", textTransform:"uppercase", color:"var(--text-faint)" }}>REQUEST</span>
+                        <span style={{ fontFamily:"var(--font-mono)", fontSize:13, fontWeight:700, color:"var(--text)" }}>
+                          {reqHistory.length > 0 ? reqHistory[reqHistory.length-1].count : 0}
+                        </span>
+                        <span style={{ fontFamily:"var(--font-mono)", fontSize:9, color:"var(--text-faint)" }}>/ 30s</span>
+                      </div>
+                      <div style={{ width:1, height:16, background:"var(--divider)" }}/>
+                      <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                        <div style={{ width:16, height:2.5, borderRadius:2, background:stats.dbLatency<100?"#4ecdc4":stats.dbLatency<300?"#f5c542":"#f25c54" }}/>
+                        <span style={{ fontFamily:"var(--font-mono)", fontSize:9, fontWeight:700, letterSpacing:"0.1em", textTransform:"uppercase", color:"var(--text-faint)" }}>LATENCY</span>
+                        <span style={{ fontFamily:"var(--font-mono)", fontSize:13, fontWeight:700, color:stats.dbLatency<100?"#4ecdc4":stats.dbLatency<300?"#f5c542":"#f25c54" }}>
+                          {stats.dbLatency}
+                        </span>
+                        <span style={{ fontFamily:"var(--font-mono)", fontSize:9, color:"var(--text-faint)" }}>ms</span>
+                        <span style={{ fontFamily:"var(--font-mono)", fontSize:9, fontWeight:700, color:stats.dbLatency<100?"#4ecdc4":stats.dbLatency<300?"#f5c542":"#f25c54", letterSpacing:"0.06em" }}>
+                          {stats.dbLatency<100?"● EXCELLENT":stats.dbLatency<300?"● NORMAL":"● DEGRADED"}
+                        </span>
+                      </div>
+                    </div>
+                    <DualGraphPanel
+                      latencyData={history}
+                      reqData={reqHistory}
+                      latencyColor={stats.dbLatency<100?"#4ecdc4":stats.dbLatency<300?"#f5c542":"#f25c54"}
+                    />
+                  </div>
                 </div>
-                <div style={{ flex:1, display:"flex", flexDirection:"column", justifyContent:"space-between" }}>
-                  {stats.recentSnippets.map((snip, i) => {
-                    const cat = CAT_COLORS[snip.category] ?? CAT_COLORS.Other;
-                    return (
-                      <a key={snip.id} href={`/code?v=${snip.filename}`} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"0 20px", gap:12, textDecoration:"none", flex:1, minHeight:48, borderBottom: i<stats.recentSnippets.length-1?"1px solid var(--divider)":"none", background:"transparent", transition:"background .12s" }}
-                        onMouseOver={e=>(e.currentTarget.style.background="var(--hover-bg)")}
-                        onMouseOut={e=>(e.currentTarget.style.background="transparent")}
-                      >
-                        <div style={{ display:"flex", alignItems:"center", gap:10, minWidth:0 }}>
-                          <span style={{ fontFamily:"var(--font-mono)", fontSize:9, fontWeight:700, padding:"3px 7px", borderRadius:5, background:cat.bg, color:cat.text, whiteSpace:"nowrap", flexShrink:0 }}>{snip.category}</span>
-                          <span style={{ fontFamily:"var(--font-mono)", fontSize:12, color:"var(--text)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{snip.title}</span>
-                        </div>
-                        <div style={{ display:"flex", gap:14, flexShrink:0, fontFamily:"var(--font-mono)", fontSize:10, color:"var(--text-faint)" }}>
-                          <span>{snip.views} views</span>
-                          <span>{fmtDate(snip.createdAt)}</span>
-                        </div>
-                      </a>
-                    );
-                  })}
+
+                {/* Recent Snippets */}
+                <div style={{ border:"2.5px solid var(--border-color)", borderRadius:12, background:"var(--card-bg)", boxShadow:"4px 4px 0 var(--border-color)", overflow:"hidden", flex:1, display:"flex", flexDirection:"column" }}>
+                  <div style={{ padding:"14px 20px", borderBottom:"1.5px solid var(--border-color)", fontFamily:"var(--font-mono)", fontSize:9, fontWeight:700, letterSpacing:"0.14em", textTransform:"uppercase", color:"var(--text-muted)" }}>
+                    Recent Snippets
+                  </div>
+                  <div style={{ flex:1, display:"flex", flexDirection:"column", justifyContent:"space-between" }}>
+                    {stats.recentSnippets.map((snip, i) => {
+                      const cat = CAT_COLORS[snip.category] ?? CAT_COLORS.Other;
+                      return (
+                        <a key={snip.id} href={`/code?v=${snip.filename}`} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"0 20px", gap:12, textDecoration:"none", flex:1, minHeight:48, borderBottom: i<stats.recentSnippets.length-1?"1px solid var(--divider)":"none", background:"transparent", transition:"background .12s" }}
+                          onMouseOver={e=>(e.currentTarget.style.background="var(--hover-bg)")}
+                          onMouseOut={e=>(e.currentTarget.style.background="transparent")}
+                        >
+                          <div style={{ display:"flex", alignItems:"center", gap:10, minWidth:0 }}>
+                            <span style={{ fontFamily:"var(--font-mono)", fontSize:9, fontWeight:700, padding:"3px 7px", borderRadius:5, background:cat.bg, color:cat.text, whiteSpace:"nowrap", flexShrink:0 }}>{snip.category}</span>
+                            <span style={{ fontFamily:"var(--font-mono)", fontSize:12, color:"var(--text)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{snip.title}</span>
+                          </div>
+                          <div style={{ display:"flex", gap:14, flexShrink:0, fontFamily:"var(--font-mono)", fontSize:10, color:"var(--text-faint)" }}>
+                            <span>{snip.views} views</span>
+                            <span>{fmtDate(snip.createdAt)}</span>
+                          </div>
+                        </a>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
               </div>{/* end left col */}
 
               {/* Hardware & Environment */}
@@ -379,8 +390,6 @@ const healthy = stats && stats.dbLatency < 300;
                 </div>
               </div>
             </div>
-
-
           </>
         )}
       </main>
