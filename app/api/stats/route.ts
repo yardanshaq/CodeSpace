@@ -5,11 +5,17 @@ import os from "os";
 export const runtime = "nodejs";
 
 let _requestCounter = 0;
+export function incrementRequestCount() { _requestCounter++; }
 function drainRequestCount() { const c = _requestCounter; _requestCounter = 0; return c; }
 
 export async function GET() {
   try {
-    const start = Date.now();
+    // Ping latency — 1 query ringan, bukan 6 query sekaligus
+    const pingStart = Date.now();
+    await prisma.$queryRaw`SELECT 1`;
+    const dbLatency = Date.now() - pingStart;
+
+    // Data queries — jalan paralel tapi tidak mempengaruhi dbLatency
     const [snippetCount, userCount, totalViews, totalLikes, totalComments, recentSnippets] =
       await Promise.all([
         prisma.snippet.count({ where: { isPublic: true } }),
@@ -24,7 +30,6 @@ export async function GET() {
           where: { isPublic: true },
         }),
       ]);
-    const dbLatency = Date.now() - start;
 
     const mem     = process.memoryUsage();
     const total   = os.totalmem();
@@ -38,7 +43,7 @@ export async function GET() {
       views:         totalViews._sum.views ?? 0,
       likes:         totalLikes,
       comments:      totalComments,
-      dbLatency,
+      dbLatency,                         // ← sekarang murni ping latency
       requestDelta:  drainRequestCount(),
       recentSnippets,
       uptime:        Math.floor(process.uptime()),
@@ -53,7 +58,6 @@ export async function GET() {
         rss:         mem.rss,
         loadAvg1:    loadAvg[0],
         loadAvg5:    loadAvg[1],
-        // Safe: show region value but never expose raw env var names/keys
         region:      process.env.VERCEL_REGION ?? "local",
         nodeVersion: process.version,
         platform:    process.platform,
@@ -61,7 +65,7 @@ export async function GET() {
     }, {
       headers: {
         "Cache-Control": "no-store",
-        "X-Robots-Tag": "noindex",
+        "X-Robots-Tag":  "noindex",
       },
     });
   } catch {

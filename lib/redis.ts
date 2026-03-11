@@ -18,18 +18,33 @@
 
 import { Redis } from "@upstash/redis";
 
-if (!process.env.UPSTASH_REDIS_REST_URL) {
-  throw new Error("UPSTASH_REDIS_REST_URL is not set in environment variables");
-}
-if (!process.env.UPSTASH_REDIS_REST_TOKEN) {
-  throw new Error(
-    "UPSTASH_REDIS_REST_TOKEN is not set in environment variables"
-  );
+// Lazy singleton — instance dibuat saat PERTAMA KALI dipakai,
+// bukan saat module diload. Ini mencegah crash saat startup
+// kalau env vars belum tersedia (misal: npm run build di CI).
+let _instance: Redis | null = null;
+
+function getInstance(): Redis {
+  if (_instance) return _instance;
+
+  if (!process.env.UPSTASH_REDIS_REST_URL) {
+    throw new Error("UPSTASH_REDIS_REST_URL is not set in environment variables");
+  }
+  if (!process.env.UPSTASH_REDIS_REST_TOKEN) {
+    throw new Error("UPSTASH_REDIS_REST_TOKEN is not set in environment variables");
+  }
+
+  _instance = new Redis({
+    url:   process.env.UPSTASH_REDIS_REST_URL,
+    token: process.env.UPSTASH_REDIS_REST_TOKEN,
+  });
+
+  return _instance;
 }
 
-export const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN,
+export const redis = new Proxy({} as Redis, {
+  get(_, prop: string) {
+    return (getInstance() as never)[prop];
+  },
 });
 
 /**
