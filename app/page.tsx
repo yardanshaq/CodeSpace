@@ -696,7 +696,7 @@ export default function HomePage() {
                     { label: "Trending",     href: "/trending" },
                     { label: "Post Snippet", href: "/post" },
                     { label: "Feedback",     href: "/feedback" },
-                    { label: "Statistics",    href: "/stats" },
+                    { label: "Status Server",    href: "/stats" },
                   ].map(({ label, href }) => (
                     <a key={href} href={href} style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--text-muted)", textDecoration: "underline", textUnderlineOffset: 3, transition: "color .15s" }}
                       onMouseOver={e => (e.currentTarget.style.color = "var(--teal)")}
