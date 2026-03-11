@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import os from "os";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 let _requestCounter = 0;
 function drainRequestCount() { const c = _requestCounter; _requestCounter = 0; return c; }
