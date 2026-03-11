@@ -1,35 +1,17 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { redis } from "@/lib/redis";
 import os from "os";
 
 export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
 
-const SERVER_START_KEY = "codespace:server_start";
-const REQ_COUNTER_KEY  = "codespace:req_counter";
-
-// Simpan waktu start ke Redis saat pertama kali — persist across workers
-async function getOrSetStartTime(): Promise<number> {
-  const existing = await redis.get<number>(SERVER_START_KEY);
-  if (existing) return existing;
-  const now = Date.now();
-  await redis.set(SERVER_START_KEY, now); // tanpa expire — permanen
-  return now;
-}
+let _requestCounter = 0;
+function drainRequestCount() { const c = _requestCounter; _requestCounter = 0; return c; }
 
 export async function GET() {
   try {
-    // Increment request counter di Redis (atomic)
-    const reqCount = await redis.incr(REQ_COUNTER_KEY);
-
-    const pingStart = Date.now();
-    await prisma.$queryRaw`SELECT 1`;
-    const dbLatency = Date.now() - pingStart;
-
-    const [startTime, snippetCount, userCount, totalViews, totalLikes, totalComments, recentSnippets] =
+    const start = Date.now();
+    const [snippetCount, userCount, totalViews, totalLikes, totalComments, recentSnippets] =
       await Promise.all([
-        getOrSetStartTime(),
         prisma.snippet.count({ where: { isPublic: true } }),
         prisma.admin.count(),
         prisma.snippet.aggregate({ _sum: { views: true } }),
@@ -42,11 +24,7 @@ export async function GET() {
           where: { isPublic: true },
         }),
       ]);
-
-    const uptimeSeconds = Math.floor((Date.now() - startTime) / 1000);
-
-    // Reset counter setelah dibaca (untuk requestDelta per 30s)
-    await redis.set(REQ_COUNTER_KEY, 0);
+    const dbLatency = Date.now() - start;
 
     const mem     = process.memoryUsage();
     const total   = os.totalmem();
@@ -55,16 +33,16 @@ export async function GET() {
     const loadAvg = os.loadavg();
 
     return NextResponse.json({
-      snippets:     snippetCount,
-      users:        userCount,
-      views:        totalViews._sum.views ?? 0,
-      likes:        totalLikes,
-      comments:     totalComments,
+      snippets:      snippetCount,
+      users:         userCount,
+      views:         totalViews._sum.views ?? 0,
+      likes:         totalLikes,
+      comments:      totalComments,
       dbLatency,
-      requestDelta: reqCount,
+      requestDelta:  drainRequestCount(),
       recentSnippets,
-      uptime:       uptimeSeconds,
-      timestamp:    new Date().toISOString(),
+      uptime:        Math.floor(process.uptime()),
+      timestamp:     new Date().toISOString(),
       hardware: {
         cpu:         cpus[0]?.model ?? "Unknown",
         cpuCores:    cpus.length,
@@ -75,6 +53,7 @@ export async function GET() {
         rss:         mem.rss,
         loadAvg1:    loadAvg[0],
         loadAvg5:    loadAvg[1],
+        // Safe: show region value but never expose raw env var names/keys
         region:      process.env.VERCEL_REGION ?? "local",
         nodeVersion: process.version,
         platform:    process.platform,
@@ -82,7 +61,7 @@ export async function GET() {
     }, {
       headers: {
         "Cache-Control": "no-store",
-        "X-Robots-Tag":  "noindex",
+        "X-Robots-Tag": "noindex",
       },
     });
   } catch {

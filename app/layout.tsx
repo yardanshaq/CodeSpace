@@ -6,7 +6,7 @@ import NavigationLoader from "@/components/NavigationLoader";
 export const metadata: Metadata = {
   metadataBase: new URL("https://codespace.yardansh.com"),
   title: "CodeSpace",
-  description: "A place to share simple snippets",
+  description: "A space to stash simple snippets",
   verification: {
     google: "h75wZ6VzLYZfGhIiDkfQekWaBwC6s19N1NHynZNOgg4",
   },
@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: "CodeSpace",
-    description: "A place to share simple snippets",
+    description: "A space to stash simple snippets",
     url: "https://codespace.yardansh.com",
     siteName: "CodeSpace",
     images: [
@@ -33,7 +33,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "CodeSpace",
-    description: "A place to share simple snippets",
+    description: "A space to stash simple snippets",
     images: ["https://cdn.nekohime.site/file/E_fVqMJ-.png"],
   },
   icons: {

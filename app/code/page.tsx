@@ -16,7 +16,7 @@ export async function generateMetadata({
   searchParams: { v?: string };
 }): Promise<Metadata> {
   const id = searchParams.v;
-  if (!id) return { title: "CodeSpace", description: "a place to share simple snippets" };
+  if (!id) return { title: "CodeSpace", description: "a space to stash simple snippets" };
 
   try {
     const snippet = await prisma.snippet.findFirst({
@@ -31,7 +31,7 @@ export async function generateMetadata({
     });
 
     // Don't leak private snippet info in OG metadata
-    if (!snippet || !snippet.isPublic) return { title: "CodeSpace", description: "a place to share simple snippets" };
+    if (!snippet || !snippet.isPublic) return { title: "CodeSpace", description: "a space to stash simple snippets" };
 
     const desc = `${snippet.category} snippet by ${snippet.admin.username} — ${snippet.filename}`;
 
@@ -61,7 +61,7 @@ export async function generateMetadata({
       },
     };
   } catch {
-    return { title: "CodeSpace", description: "a place to share simple snippets" };
+    return { title: "CodeSpace", description: "a space to stash simple snippets" };
   }
 }
 
