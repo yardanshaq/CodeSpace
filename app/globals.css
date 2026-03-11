@@ -196,8 +196,11 @@ body:has(.cs-loader-logo)::-webkit-scrollbar {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  transition: var(--transition), transform 0.15s;
+  transition: var(--transition), transform 0.15s, opacity 0.45s ease, translate 0.45s ease;
+  opacity: 0;
+  translate: 0 28px;
 }
+.snippet-card.visible { opacity: 1; translate: 0 0; }
 .snippet-card:hover { box-shadow: var(--shadow-lg); transform: translate(-2px, -2px); }
 
 .snippet-card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
@@ -820,6 +823,14 @@ textarea:focus-visible {
 @keyframes cs-loader-bounce {
   0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
   40%            { transform: translateY(-10px); opacity: 1; }
+}
+@keyframes cs-logo-entrance {
+  0%   { transform: translateZ(0) rotate(0deg)   scale(1); }
+  35%  { transform: translateZ(0) rotate(360deg) scale(1.08); }
+  52%  { transform: translateZ(0) rotate(360deg) scale(0.95); }
+  66%  { transform: translateZ(0) rotate(360deg) scale(1.02); }
+  78%  { transform: translateZ(0) rotate(360deg) scale(1); }
+  100% { transform: translateZ(0) rotate(360deg) scale(1); }
 }
 
 /* Logo dark — invert supaya tidak glitch hitam saat dark mode */

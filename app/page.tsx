@@ -86,6 +86,7 @@ export default function HomePage() {
   const sortRef                               = useRef<HTMLDivElement>(null);
   const catFilterRef                          = useRef<HTMLDivElement>(null);
   const pollRef                               = useRef<ReturnType<typeof setInterval> | null>(null);
+  const gridRef                               = useRef<HTMLDivElement>(null);
   const [showScrollTop, setShowScrollTop]     = useState(false);
 
   const checkAuth = () => {
@@ -181,6 +182,23 @@ export default function HomePage() {
     pollRef.current = setInterval(() => fetchSnippets(true), 10000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [fetchSnippets]);
+
+  useEffect(() => {
+    if (!gridRef.current) return;
+    const cards = gridRef.current.querySelectorAll<HTMLElement>('.snippet-card');
+    const obs = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const el = entry.target as HTMLElement;
+          const idx = Array.from(cards).indexOf(el);
+          setTimeout(() => el.classList.add('visible'), (idx % 3) * 60);
+          obs.unobserve(el);
+        }
+      });
+    }, { threshold: 0.08 });
+    cards.forEach((card: HTMLElement) => obs.observe(card));
+    return () => obs.disconnect();
+  }, [snippets]);
 
   const toggleAuthor   = (a: string) =>
     setSelectedAuthors((prev: string[]) => prev.includes(a) ? prev.filter((x: string) => x !== a) : [...prev, a]);
@@ -543,7 +561,7 @@ export default function HomePage() {
         ) : snippets.length === 0 ? (
           <div className="loading">NO SNIPPETS FOUND.</div>
         ) : (
-          <div className="snippets-grid">
+          <div className="snippets-grid" ref={gridRef}>
             {snippets.map((snippet) => {
               const catStyle = getCategoryStyle(snippet.category);
               return (
@@ -678,7 +696,7 @@ export default function HomePage() {
                     { label: "Trending",     href: "/trending" },
                     { label: "Post Snippet", href: "/post" },
                     { label: "Feedback",     href: "/feedback" },
-                    { label: "Status Server",    href: "/stats" },
+                    { label: "Statistics",    href: "/stats" },
                   ].map(({ label, href }) => (
                     <a key={href} href={href} style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--text-muted)", textDecoration: "underline", textUnderlineOffset: 3, transition: "color .15s" }}
                       onMouseOver={e => (e.currentTarget.style.color = "var(--teal)")}
