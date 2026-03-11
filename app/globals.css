@@ -196,12 +196,12 @@ body:has(.cs-loader-logo)::-webkit-scrollbar {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  transition: var(--transition), transform 0.15s, opacity 0.45s ease, translate 0.45s ease;
+  transition: box-shadow 0.2s, opacity 0.45s ease, transform 0.45s ease;
   opacity: 0;
-  translate: 0 28px;
+  transform: translateY(28px);
 }
-.snippet-card.visible { opacity: 1; translate: 0 0; }
-.snippet-card:hover { box-shadow: var(--shadow-lg); transform: translate(-2px, -2px); }
+.snippet-card.visible { opacity: 1; transform: translateY(0); }
+.snippet-card.visible:hover { box-shadow: var(--shadow-lg); transform: translate(-2px, -2px); }
 
 .snippet-card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
 
