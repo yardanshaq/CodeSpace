@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import NavigationLoader from "@/components/NavigationLoader";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://codespace.yardansh.com"),
@@ -72,6 +73,7 @@ export default function RootLayout({
       </head>
       <body suppressHydrationWarning>
         <ThemeProvider>
+          <NavigationLoader />
           {children}
         </ThemeProvider>
       </body>

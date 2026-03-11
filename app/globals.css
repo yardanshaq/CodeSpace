@@ -43,7 +43,7 @@
 [data-theme="dark"] {
   --bg:           #111111;
   --surface:      #1e1e1e;
-  --surface2:     #2a2a2a;
+  --surface2:     #242424;
   --text:         #f0f0f0;
   --text-muted:   #aaaaaa;
   --text-faint:   #666666;
@@ -419,7 +419,9 @@ body:has(.cs-loader-logo)::-webkit-scrollbar {
   background: var(--surface);
 }
 .input-field:hover:not(:focus) { border-color: var(--text-muted); }
-.input-field::placeholder { color: var(--text-faint); font-size: 12px; letter-spacing: 0.02em; }
+.input-field::placeholder { color: var(--text-muted); font-size: 12px; letter-spacing: 0.02em; }
+[data-theme="dark"] .input-field { border-color: #3a3a3a; }
+[data-theme="dark"] .input-field::placeholder { color: #666; }
 
 /* ── ADMIN HEADER ────────────────────────────────────────────────────────── */
 .admin-header {

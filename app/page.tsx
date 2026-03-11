@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useNavigate } from "@/components/NavigationLoader";
 import Navbar from "@/components/Navbar";
 import dynamic from "next/dynamic";
 const PageLoader = dynamic(() => import("@/components/PageLoader"), { ssr: false });
@@ -64,7 +65,8 @@ function formatDate(d: string) {
 }
 
 export default function HomePage() {
-  const router = useRouter();
+  const router   = useRouter();
+  const navigate = useNavigate();
   const [snippets, setSnippets]               = useState<Snippet[]>([]);
   const [search, setSearch]                   = useState("");
   const [selectedAuthors, setSelectedAuthors] = useState<string[]>([]);
@@ -144,7 +146,7 @@ export default function HomePage() {
       }
 
       if (silent) {
-        setSnippets(prev => {
+        setSnippets((prev: Snippet[]) => {
           const prevMap    = new Map(prev.map(s => [s.id, s]));
           const hasChanges =
             prev.length !== filtered.length ||
@@ -181,11 +183,11 @@ export default function HomePage() {
   }, [fetchSnippets]);
 
   const toggleAuthor   = (a: string) =>
-    setSelectedAuthors((prev) => prev.includes(a) ? prev.filter(x => x !== a) : [...prev, a]);
+    setSelectedAuthors((prev: string[]) => prev.includes(a) ? prev.filter((x: string) => x !== a) : [...prev, a]);
   const clearAuthors   = () => setSelectedAuthors([]);
 
   const toggleCategory = (c: string) =>
-    setSelectedCategories((prev) => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c]);
+    setSelectedCategories((prev: string[]) => prev.includes(c) ? prev.filter((x: string) => x !== c) : [...prev, c]);
   const clearCategories = () => setSelectedCategories([]);
 
   const handlePostClick = () => router.push(user ? "/post" : "/login");
@@ -547,7 +549,7 @@ export default function HomePage() {
               return (
                 <div key={snippet.id} className="snippet-card">
                   <div className="snippet-card-header">
-                    <span className="snippet-card-title" onClick={() => router.push(`/code?v=${snippet.filename}`)}>
+                    <span className="snippet-card-title" onClick={() => navigate(`/code?v=${snippet.filename}`)}>
                       {snippet.title}
                     </span>
                     <span className="snippet-views">
@@ -602,7 +604,7 @@ export default function HomePage() {
                       </svg>
                       {snippet.admin.username}
                     </span>
-                    <button className="btn btn-black" onClick={() => router.push(`/code?v=${snippet.filename}`)} aria-label={`View ${snippet.title}`}>
+                    <button className="btn btn-black" onClick={() => navigate(`/code?v=${snippet.filename}`)} aria-label={`View ${snippet.title}`}>
                       View
                     </button>
                   </div>

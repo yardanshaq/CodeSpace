@@ -85,19 +85,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ noEmail: true });
     }
 
-    // Invalidate old tokens
-    await prisma.passwordReset.updateMany({
-      where: { adminId: admin.id, used: false },
-      data:  { used: true },
-    });
-
     // Generate token
     const token     = crypto.randomBytes(32).toString("hex");
     const expiresAt = new Date(Date.now() + 1000 * 60 * 30); // 30 minutes
 
-    await prisma.passwordReset.create({
-      data: { token, adminId: admin.id, expiresAt },
-    });
+    // ACID: invalidate old tokens + create new one atomically
+    await prisma.$transaction([
+      prisma.passwordReset.updateMany({ where: { adminId: admin.id, used: false }, data: { used: true } }),
+      prisma.passwordReset.create({ data: { token, adminId: admin.id, expiresAt } }),
+    ]);
 
     const resetUrl = `${process.env.NEXT_PUBLIC_APP_URL}/reset-password?token=${token}`;
 

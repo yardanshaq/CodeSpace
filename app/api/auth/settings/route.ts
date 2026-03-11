@@ -70,13 +70,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No changes provided" }, { status: 400 });
     }
 
-    await prisma.admin.update({
-      where: { id: session.id },
-      data: updateData,
-    });
-
-    // Invalidate all sessions dan buat sesi baru
-    await deleteAllSessions(session.id);
+    // ACID: update admin + invalidate sessions atomically
+    await prisma.$transaction([
+      prisma.admin.update({ where: { id: session.id }, data: updateData }),
+      prisma.session.deleteMany({ where: { adminId: session.id } }),
+    ]);
 
     const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || undefined;
     const ua = req.headers.get("user-agent") || undefined;

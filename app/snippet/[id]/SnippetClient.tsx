@@ -705,8 +705,7 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
           {/* Like button row */}
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 32 }}>
             <button
-              onClick={handleLike}
-              disabled={likeLoading}
+              onClick={!likeLoading ? handleLike : undefined}
               title={user ? (liked ? "Unlike" : "Like this snippet") : "Sign in to like"}
               style={{
                 display: "flex", alignItems: "center", gap: 8,
@@ -714,7 +713,8 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
                 border: `2.5px solid ${liked ? "var(--red)" : "var(--border-color)"}`,
                 background: liked ? "rgba(242,92,84,0.1)" : "var(--surface)",
                 color: liked ? "var(--red)" : "var(--text-muted)",
-                cursor: likeLoading ? "wait" : "pointer",
+                cursor: "pointer",
+                opacity: likeLoading ? 0.7 : 1,
                 fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700,
                 boxShadow: liked ? "3px 3px 0 var(--red)" : "3px 3px 0 var(--border-color)",
                 transition: "all .15s", letterSpacing: "0.04em",
