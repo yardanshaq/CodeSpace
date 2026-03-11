@@ -5,7 +5,7 @@ import os from "os";
 export const runtime = "nodejs";
 
 let _requestCounter = 0;
-export function incrementRequestCount() { _requestCounter++; }
+function incrementRequestCount() { _requestCounter++; }
 function drainRequestCount() { const c = _requestCounter; _requestCounter = 0; return c; }
 
 export async function GET() {
