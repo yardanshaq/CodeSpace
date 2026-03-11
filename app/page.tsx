@@ -35,7 +35,7 @@ const SORT_OPTIONS: { field: SortField; labelAsc: string; labelDesc: string }[] 
   { field: "views",     labelAsc: "Views: Lowest", labelDesc: "Views: Highest" },
 ];
 
-// ── Category color map ──────────────────────────────────────────────────────
+// ── Category color map (shared dengan trending page) ──────────────────────────
 const CATEGORY_COLORS: Record<string, { bg: string; text: string }> = {
   AI:         { bg: "#f5c542", text: "#000" },
   Anime:      { bg: "#f472b6", text: "#000" },
@@ -87,6 +87,7 @@ export default function HomePage() {
   const pollRef                               = useRef<ReturnType<typeof setInterval> | null>(null);
   const gridRef                               = useRef<HTMLDivElement>(null);
   const [showScrollTop, setShowScrollTop]     = useState(false);
+  const [mounted, setMounted]                 = useState(false);
 
   const checkAuth = () => {
     fetch("/api/auth/me", { credentials: "include" })
@@ -99,12 +100,19 @@ export default function HomePage() {
   };
 
   useEffect(() => {
+    setMounted(true);
     checkAuth();
     window.addEventListener("auth-change", checkAuth);
     return () => window.removeEventListener("auth-change", checkAuth);
   }, []);
 
-  // ── Close dropdowns on scroll (fix Android & all platforms) ──────────────
+  useEffect(() => {
+    const onScroll = () => setShowScrollTop(window.scrollY > 400);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  // ── Tutup dropdown saat scroll (Desktop, Android, iOS) ───────────────────
   useEffect(() => {
     const handleScroll = () => {
       setShowFilter(false);
@@ -113,50 +121,6 @@ export default function HomePage() {
     };
     window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
-
-  // ── Clamp dropdown: posisi horizontal + dynamic max-height ────────────
-  useEffect(() => {
-    const MARGIN     = 12;
-    const BOTTOM_GAP = 16;
-    const refs = [sortRef, filterRef, catFilterRef];
-    refs.forEach(ref => {
-      if (!ref.current) return;
-      const panel = ref.current.querySelector<HTMLElement>('.dropdown-panel');
-      if (!panel) return;
-
-      // 1. Reset
-      panel.style.left      = '';
-      panel.style.right     = '';
-      panel.style.maxHeight = '';
-
-      // 2. Dynamic max-height = ruang tersisa di bawah tombol
-      const btnRect    = ref.current.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - btnRect.bottom - MARGIN - BOTTOM_GAP;
-      panel.style.maxHeight = `${Math.max(120, spaceBelow)}px`;
-      panel.style.overflowY = 'auto';
-
-      // 3. Clamp horizontal agar tidak keluar viewport
-      const rect = panel.getBoundingClientRect();
-      const vw   = window.innerWidth;
-      if (rect.right > vw - MARGIN) {
-        panel.style.left  = 'auto';
-        panel.style.right = '0';
-        const r2 = panel.getBoundingClientRect();
-        if (r2.left < MARGIN) {
-          panel.style.right = 'auto';
-          panel.style.left  = `${MARGIN - ref.current.getBoundingClientRect().left}px`;
-        }
-      } else if (rect.left < MARGIN) {
-        panel.style.left = `${MARGIN - ref.current.getBoundingClientRect().left}px`;
-      }
-    });
-  }, [showSort, showFilter, showCatFilter]);
-
-  useEffect(() => {
-    const onScroll = () => setShowScrollTop(window.scrollY > 400);
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
   useEffect(() => {
@@ -168,6 +132,49 @@ export default function HomePage() {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  // ── Clamp dropdown: horizontal position + dynamic max-height ─────────────
+  // Otomatis menyesuaikan posisi & tinggi agar tidak keluar viewport.
+  // Bekerja di semua platform: Desktop, Android, iPhone.
+  useEffect(() => {
+    const MARGIN     = 12;
+    const BOTTOM_GAP = 16;
+    const refs = [sortRef, filterRef, catFilterRef];
+    refs.forEach(ref => {
+      if (!ref.current) return;
+      const panel = ref.current.querySelector<HTMLElement>(".dropdown-panel");
+      if (!panel) return;
+
+      // 1. Reset dulu
+      panel.style.left      = "";
+      panel.style.right     = "";
+      panel.style.maxHeight = "";
+
+      // 2. Dynamic max-height = ruang tersisa di bawah tombol
+      const btnRect    = ref.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - btnRect.bottom - MARGIN - BOTTOM_GAP;
+      panel.style.maxHeight = `${Math.max(120, spaceBelow)}px`;
+      panel.style.overflowY = "auto";
+
+      // 3. Clamp horizontal agar tidak keluar layar
+      const rect = panel.getBoundingClientRect();
+      const vw   = window.innerWidth;
+      if (rect.right > vw - MARGIN) {
+        // Overflow kanan → anchor ke kanan tombol
+        panel.style.left  = "auto";
+        panel.style.right = "0";
+        // Cek ulang kalau setelah anchor kanan masih overflow kiri
+        const r2 = panel.getBoundingClientRect();
+        if (r2.left < MARGIN) {
+          panel.style.right = "auto";
+          panel.style.left  = `${MARGIN - ref.current.getBoundingClientRect().left}px`;
+        }
+      } else if (rect.left < MARGIN) {
+        // Overflow kiri → geser ke kanan secukupnya
+        panel.style.left = `${MARGIN - ref.current.getBoundingClientRect().left}px`;
+      }
+    });
+  }, [showSort, showFilter, showCatFilter]);
 
   const fetchSnippets = useCallback(async (silent = false) => {
     if (!silent && isFirstLoad.current) setLoading(true);
@@ -181,13 +188,15 @@ export default function HomePage() {
       const data = await res.json();
       const list = Array.isArray(data) ? data : [];
 
-      const unique     = Array.from(new Set(list.map((s: Snippet) => s.admin.username))) as string[];
+      const unique = Array.from(new Set(list.map((s: Snippet) => s.admin.username))) as string[];
       const uniqueCats = Array.from(new Set(list.map((s: Snippet) => s.category))) as string[];
 
+      // Apply author filter
       let filtered = selectedAuthors.length > 0
         ? list.filter((s: Snippet) => selectedAuthors.includes(s.admin.username))
         : list;
 
+      // Apply category filter
       if (selectedCategories.length > 0) {
         filtered = filtered.filter((s: Snippet) => selectedCategories.includes(s.category));
       }
@@ -230,26 +239,20 @@ export default function HomePage() {
   }, [fetchSnippets]);
 
   useEffect(() => {
-    if (!gridRef.current || snippets.length === 0) return;
-    const cards = Array.from(gridRef.current.querySelectorAll<HTMLElement>('.snippet-card'));
-
-    const fallback = setTimeout(() => {
-      cards.forEach(c => c.classList.add('visible'));
-    }, 1500);
-
+    if (!gridRef.current) return;
+    const cards = gridRef.current.querySelectorAll<HTMLElement>(".snippet-card");
     const obs = new IntersectionObserver((entries) => {
       entries.forEach(entry => {
         if (entry.isIntersecting) {
-          const el  = entry.target as HTMLElement;
-          const idx = cards.indexOf(el);
-          setTimeout(() => el.classList.add('visible'), (idx % 3) * 60);
+          const el = entry.target as HTMLElement;
+          const idx = Array.from(cards).indexOf(el);
+          setTimeout(() => el.classList.add("visible"), (idx % 3) * 60);
           obs.unobserve(el);
         }
       });
-    }, { threshold: 0, rootMargin: '0px 0px -20px 0px' });
-
-    cards.forEach(card => obs.observe(card));
-    return () => { obs.disconnect(); clearTimeout(fallback); };
+    }, { threshold: 0.08 });
+    cards.forEach((card: HTMLElement) => obs.observe(card));
+    return () => obs.disconnect();
   }, [snippets]);
 
   const toggleAuthor   = (a: string) =>
@@ -268,12 +271,18 @@ export default function HomePage() {
     return order === "asc" ? opt.labelAsc : opt.labelDesc;
   })();
 
-  // Close all dropdowns helper
-  const closeAllDropdowns = () => {
-    setShowFilter(false);
-    setShowSort(false);
-    setShowCatFilter(false);
-  };
+  const totalActiveFilters = selectedAuthors.length + selectedCategories.length;
+
+  // Jangan render apapun sebelum client mount — cegah flash konten
+  if (!mounted) return (
+    <div style={{
+      position: "fixed", inset: 0,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      background: "var(--bg)",
+    }}>
+      <PageLoader />
+    </div>
+  );
 
   return (
     <>
@@ -329,6 +338,7 @@ export default function HomePage() {
               Send Feedback
             </button>
           </div>
+
         </div>
 
         {/* ── Search + Controls row ── */}
@@ -379,44 +389,42 @@ export default function HomePage() {
               </button>
 
               {showSort && (
-                <>
-                  <div className="dropdown-panel dropdown-panel-sort">
-                    <div style={{ fontSize: 9, fontWeight: 700, fontFamily: "var(--font-mono)", letterSpacing: "0.12em", color: "var(--text-muted)", marginBottom: 10, textTransform: "uppercase" }}>
-                      Sort By
-                    </div>
-                    {SORT_OPTIONS.map(opt => (
-                      <div key={opt.field}>
-                        {(["asc", "desc"] as SortOrder[]).map(dir => {
-                          const label    = dir === "asc" ? opt.labelAsc : opt.labelDesc;
-                          const isActive = sortBy === opt.field && order === dir;
-                          return (
-                            <div
-                              key={dir}
-                              onClick={() => { setSortBy(opt.field); setOrder(dir); setShowSort(false); }}
-                              onMouseDown={(e) => { e.preventDefault(); setSortBy(opt.field); setOrder(dir); setShowSort(false); }}
-                              style={{
-                                padding: "8px 10px", borderRadius: 8, cursor: "pointer",
-                                background: isActive ? "var(--teal)" : "transparent",
-                                color: isActive ? "#000" : "var(--text)",
-                                fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: isActive ? 700 : 600,
-                                display: "flex", alignItems: "center", gap: 8,
-                              }}
-                              onMouseOver={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "var(--surface2)"; }}
-                              onMouseOut={e  => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
-                            >
-                              {isActive && (
-                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                                  <polyline points="20 6 9 17 4 12"/>
-                                </svg>
-                              )}
-                              {label}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ))}
+                <div className="dropdown-panel" style={{ left: 0 }}>
+                  <div style={{ fontSize: 9, fontWeight: 700, fontFamily: "var(--font-mono)", letterSpacing: "0.12em", color: "var(--text-muted)", marginBottom: 10, textTransform: "uppercase" }}>
+                    Sort By
                   </div>
-                </>
+                  {SORT_OPTIONS.map(opt => (
+                    <div key={opt.field}>
+                      {(["asc", "desc"] as SortOrder[]).map(dir => {
+                        const label    = dir === "asc" ? opt.labelAsc : opt.labelDesc;
+                        const isActive = sortBy === opt.field && order === dir;
+                        return (
+                          <div
+                            key={dir}
+                            onClick={() => { setSortBy(opt.field); setOrder(dir); setShowSort(false); }}
+                            onMouseDown={(e) => { e.preventDefault(); setSortBy(opt.field); setOrder(dir); setShowSort(false); }}
+                            style={{
+                              padding: "8px 10px", borderRadius: 8, cursor: "pointer",
+                              background: isActive ? "var(--teal)" : "transparent",
+                              color: isActive ? "#000" : "var(--text)",
+                              fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: isActive ? 700 : 600,
+                              display: "flex", alignItems: "center", gap: 8,
+                            }}
+                            onMouseOver={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "var(--surface2)"; }}
+                            onMouseOut={e  => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                          >
+                            {isActive && (
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="20 6 9 17 4 12"/>
+                              </svg>
+                            )}
+                            {label}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
 
@@ -454,50 +462,48 @@ export default function HomePage() {
               </button>
 
               {showFilter && (
-                <>
-                  <div className="dropdown-panel dropdown-panel-right">
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                      <span style={{ fontSize: 11, fontWeight: 700, fontFamily: "var(--font-mono)", letterSpacing: "0.08em", color: "var(--text)" }}>
-                        FILTER BY AUTHOR
-                      </span>
-                      {selectedAuthors.length > 0 && (
-                        <button onClick={clearAuthors} aria-label="Clear author filters" style={{ fontSize: 10, fontFamily: "var(--font-mono)", background: "none", border: "none", cursor: "pointer", color: "var(--red)", fontWeight: 700 }}>
-                          CLEAR
-                        </button>
-                      )}
-                    </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                      {authors.map(a => {
-                        const selected = selectedAuthors.includes(a);
-                        return (
-                          <div key={a} onClick={() => toggleAuthor(a)} style={{
-                            display: "flex", alignItems: "center", gap: 10, padding: "8px 10px",
-                            border: `2px solid ${selected ? "var(--teal)" : "var(--border-color)"}`,
-                            borderRadius: 8, cursor: "pointer",
-                            background: selected ? "rgba(78,205,196,0.1)" : "var(--surface)",
-                            boxShadow: selected ? "2px 2px 0 var(--teal)" : "2px 2px 0 var(--border-color)",
-                            transition: "all .1s",
-                          }}>
-                            <div style={{
-                              width: 18, height: 18, border: "2px solid var(--border-color)", borderRadius: 4,
-                              background: selected ? "var(--teal)" : "var(--surface)",
-                              display: "flex", alignItems: "center", justifyContent: "center",
-                              fontSize: 11, fontWeight: 700, flexShrink: 0, color: "#000",
-                            }}>
-                              {selected && "x"}
-                            </div>
-                            <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", fontWeight: 600, color: "var(--text)" }}>{a}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
+                <div className="dropdown-panel" style={{ right: 0 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, fontFamily: "var(--font-mono)", letterSpacing: "0.08em", color: "var(--text)" }}>
+                      FILTER BY AUTHOR
+                    </span>
                     {selectedAuthors.length > 0 && (
-                      <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1.5px solid var(--divider)", fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-                        {selectedAuthors.length} author{selectedAuthors.length > 1 ? "s" : ""} selected
-                      </div>
+                      <button onClick={clearAuthors} aria-label="Clear author filters" style={{ fontSize: 10, fontFamily: "var(--font-mono)", background: "none", border: "none", cursor: "pointer", color: "var(--red)", fontWeight: 700 }}>
+                        CLEAR
+                      </button>
                     )}
                   </div>
-                </>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {authors.map(a => {
+                      const selected = selectedAuthors.includes(a);
+                      return (
+                        <div key={a} onClick={() => toggleAuthor(a)} style={{
+                          display: "flex", alignItems: "center", gap: 10, padding: "8px 10px",
+                          border: `2px solid ${selected ? "var(--teal)" : "var(--border-color)"}`,
+                          borderRadius: 8, cursor: "pointer",
+                          background: selected ? "rgba(78,205,196,0.1)" : "var(--surface)",
+                          boxShadow: selected ? "2px 2px 0 var(--teal)" : "2px 2px 0 var(--border-color)",
+                          transition: "all .1s",
+                        }}>
+                          <div style={{
+                            width: 18, height: 18, border: "2px solid var(--border-color)", borderRadius: 4,
+                            background: selected ? "var(--teal)" : "var(--surface)",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            fontSize: 11, fontWeight: 700, flexShrink: 0, color: "#000",
+                          }}>
+                            {selected && "x"}
+                          </div>
+                          <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", fontWeight: 600, color: "var(--text)" }}>{a}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {selectedAuthors.length > 0 && (
+                    <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1.5px solid var(--divider)", fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                      {selectedAuthors.length} author{selectedAuthors.length > 1 ? "s" : ""} selected
+                    </div>
+                  )}
+                </div>
               )}
             </div>
 
@@ -532,55 +538,54 @@ export default function HomePage() {
               </button>
 
               {showCatFilter && (
-                <>
-                  <div className="dropdown-panel dropdown-panel-right">
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                      <span style={{ fontSize: 11, fontWeight: 700, fontFamily: "var(--font-mono)", letterSpacing: "0.08em", color: "var(--text)" }}>
-                        FILTER BY CATEGORY
-                      </span>
-                      {selectedCategories.length > 0 && (
-                        <button onClick={clearCategories} aria-label="Clear category filters" style={{ fontSize: 10, fontFamily: "var(--font-mono)", background: "none", border: "none", cursor: "pointer", color: "var(--red)", fontWeight: 700 }}>
-                          CLEAR
-                        </button>
-                      )}
-                    </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                      {categories.map(cat => {
-                        const selected = selectedCategories.includes(cat);
-                        const catStyle = getCategoryStyle(cat);
-                        return (
-                          <div key={cat} onClick={() => toggleCategory(cat)} style={{
-                            display: "flex", alignItems: "center", gap: 10, padding: "8px 10px",
-                            border: `2px solid ${selected ? catStyle.bg : "var(--border-color)"}`,
-                            borderRadius: 8, cursor: "pointer",
-                            background: selected ? `${catStyle.bg}22` : "var(--surface)",
-                            boxShadow: selected ? `2px 2px 0 ${catStyle.bg}` : "2px 2px 0 var(--border-color)",
-                            transition: "all .1s",
-                          }}>
-                            <div style={{
-                              width: 18, height: 18, border: `2px solid ${selected ? catStyle.bg : "var(--border-color)"}`, borderRadius: 4,
-                              background: selected ? catStyle.bg : "var(--surface)",
-                              display: "flex", alignItems: "center", justifyContent: "center",
-                              fontSize: 11, fontWeight: 700, flexShrink: 0, color: catStyle.text,
-                            }}>
-                              {selected && "x"}
-                            </div>
-                            <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", fontWeight: 600, color: "var(--text)" }}>{cat}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
+                <div className="dropdown-panel" style={{ right: 0 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, fontFamily: "var(--font-mono)", letterSpacing: "0.08em", color: "var(--text)" }}>
+                      FILTER BY CATEGORY
+                    </span>
                     {selectedCategories.length > 0 && (
-                      <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1.5px solid var(--divider)", fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-                        {selectedCategories.length} categor{selectedCategories.length > 1 ? "ies" : "y"} selected
-                      </div>
+                      <button onClick={clearCategories} aria-label="Clear category filters" style={{ fontSize: 10, fontFamily: "var(--font-mono)", background: "none", border: "none", cursor: "pointer", color: "var(--red)", fontWeight: 700 }}>
+                        CLEAR
+                      </button>
                     )}
                   </div>
-                </>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {categories.map(cat => {
+                      const selected = selectedCategories.includes(cat);
+                      const catStyle = getCategoryStyle(cat);
+                      return (
+                        <div key={cat} onClick={() => toggleCategory(cat)} style={{
+                          display: "flex", alignItems: "center", gap: 10, padding: "8px 10px",
+                          border: `2px solid ${selected ? catStyle.bg : "var(--border-color)"}`,
+                          borderRadius: 8, cursor: "pointer",
+                          background: selected ? `${catStyle.bg}22` : "var(--surface)",
+                          boxShadow: selected ? `2px 2px 0 ${catStyle.bg}` : "2px 2px 0 var(--border-color)",
+                          transition: "all .1s",
+                        }}>
+                          <div style={{
+                            width: 18, height: 18, border: `2px solid ${selected ? catStyle.bg : "var(--border-color)"}`, borderRadius: 4,
+                            background: selected ? catStyle.bg : "var(--surface)",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            fontSize: 11, fontWeight: 700, flexShrink: 0, color: catStyle.text,
+                          }}>
+                            {selected && "x"}
+                          </div>
+                          <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", fontWeight: 600, color: "var(--text)" }}>{cat}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {selectedCategories.length > 0 && (
+                    <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1.5px solid var(--divider)", fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                      {selectedCategories.length} categor{selectedCategories.length > 1 ? "ies" : "y"} selected
+                    </div>
+                  )}
+                </div>
               )}
             </div>
 
-            {/* POST button */}
+            {/* POST button — always rendered to prevent layout shift (CLS) */}
+            {/* Invisible placeholder before auth check, hidden when not logged in */}
             <button
               onClick={handlePostClick}
               title="Post a snippet"
@@ -593,6 +598,7 @@ export default function HomePage() {
                 display: "flex", alignItems: "center", gap: 7,
                 fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700,
                 letterSpacing: "0.06em", whiteSpace: "nowrap",
+                // Collapse to zero width when not logged in — no layout shift
                 maxWidth: userChecked && !user ? 0 : 200,
                 padding: userChecked && !user ? 0 : "0 18px",
                 border: userChecked && !user ? "none" : "2.5px solid var(--border-color)",
@@ -640,6 +646,7 @@ export default function HomePage() {
 
                   <span className="snippet-filename">{snippet.filename}</span>
 
+                  {/* Category badge — original class + color only */}
                   <span
                     className="snippet-category-badge"
                     style={{ background: catStyle.bg, color: catStyle.text, borderColor: catStyle.bg }}
@@ -751,11 +758,11 @@ export default function HomePage() {
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   {[
-                    { label: "Home",          href: "/" },
-                    { label: "Trending",      href: "/trending" },
-                    { label: "Post Snippet",  href: "/post" },
-                    { label: "Feedback",      href: "/feedback" },
-                    { label: "Status Server", href: "/stats" },
+                    { label: "Home",         href: "/" },
+                    { label: "Trending",     href: "/trending" },
+                    { label: "Post Snippet", href: "/post" },
+                    { label: "Feedback",     href: "/feedback" },
+                    { label: "Status Server",    href: "/stats" },
                   ].map(({ label, href }) => (
                     <a key={href} href={href} style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--text-muted)", textDecoration: "underline", textUnderlineOffset: 3, transition: "color .15s" }}
                       onMouseOver={e => (e.currentTarget.style.color = "var(--teal)")}
@@ -806,7 +813,7 @@ export default function HomePage() {
         </div>
 
         {/* Bottom bar */}
-        <div className="footer-bottom" style={{
+        <div style={{
           borderTop: "1.5px solid var(--border-color)",
           padding: "12px 24px", display: "flex", justifyContent: "space-between",
           alignItems: "center", gap: 12, flexWrap: "wrap",
@@ -866,10 +873,7 @@ export default function HomePage() {
           flex-shrink: 0;
         }
 
-        /* ── Dropdown (semua platform) ── */
-        .dropdown-backdrop  { display: none; }
-        .dropdown-drag-handle { display: none; }
-
+        /* ── Dropdown panel ── */
         .dropdown-panel {
           position: absolute;
           top: calc(100% + 10px);
@@ -879,19 +883,18 @@ export default function HomePage() {
           box-shadow: 4px 4px 0 var(--border-color);
           padding: 10px;
           min-width: 200px;
+          max-width: min(260px, calc(100vw - 24px));
+          /* max-height & overflow-y diatur oleh JS clamp effect */
           max-height: 60vh;
           overflow-y: auto;
           /* iOS momentum scroll */
           -webkit-overflow-scrolling: touch;
-          /* Prevent page scroll bleed-through */
+          /* Cegah scroll halaman bocor saat scroll dalam dropdown */
           overscroll-behavior: contain;
-          /* Allow vertical touch drag inside panel */
+          /* Izinkan vertical touch drag di dalam panel (Android & iOS) */
           touch-action: pan-y;
-          z-index: 300;
-          max-width: min(260px, calc(100vw - 24px));
+          z-index: 200;
         }
-        .dropdown-panel-sort  { left: 0; }
-        .dropdown-panel-right { right: 0; }
 
         /* Pastikan parent wrapper tidak clip dropdown */
         .search-controls-group > div { overflow: visible; }
@@ -912,11 +915,10 @@ export default function HomePage() {
             flex: 1 1 100%;
             justify-content: flex-start;
           }
+          /* POST label hidden on mobile to save space */
           .post-btn-label { display: none; }
-
-          /* Posisi dropdown di-handle oleh JS clamp effect */
+          /* Sort label hidden on very small screens */
         }
-
         @media (max-width: 400px) {
           .sort-btn-label { display: none; }
         }
