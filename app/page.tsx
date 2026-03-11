@@ -77,6 +77,23 @@ export default function HomePage() {
   const [showFilter, setShowFilter]           = useState(false);
   const [showSort, setShowSort]               = useState(false);
   const [showCatFilter, setShowCatFilter]     = useState(false);
+  const [dropdownPos, setDropdownPos]         = useState<{top:number,left?:number,right?:number}>({top:0});
+
+  const openDropdown = (ref: React.RefObject<HTMLDivElement>, side: "left"|"right", setter: React.Dispatch<React.SetStateAction<boolean>>, others: Array<React.Dispatch<React.SetStateAction<boolean>>>) => {
+    others.forEach(fn => fn(false));
+    if (ref.current) {
+      const r = ref.current.getBoundingClientRect();
+      const isMobile = window.innerWidth <= 600;
+      if (isMobile) {
+        setDropdownPos({ top: r.bottom + 8 });
+      } else {
+        setDropdownPos(side === "left"
+          ? { top: r.bottom + 8, left: r.left }
+          : { top: r.bottom + 8, right: window.innerWidth - r.right });
+      }
+    }
+    setter(v => !v);
+  };
   const [sortBy, setSortBy]                   = useState<SortField>("createdAt");
   const [order, setOrder]                     = useState<SortOrder>("desc");
   const [user, setUser]                       = useState<NavUser | null>(null);
@@ -310,7 +327,7 @@ export default function HomePage() {
             {/* Sort button */}
             <div ref={sortRef} style={{ position: "relative", flexShrink: 0 }}>
               <button
-                onClick={() => { setShowSort(v => !v); setShowFilter(false); setShowCatFilter(false); }}
+                onClick={() => openDropdown(sortRef, "left", setShowSort, [setShowFilter, setShowCatFilter])}
                 aria-label="Sort snippets" aria-expanded={showSort}
                 style={{
                   height: 52, padding: "0 14px",
@@ -329,7 +346,7 @@ export default function HomePage() {
               </button>
 
               {showSort && (
-                <div className="dropdown-panel" style={{ left: 0 }}>
+                <div className="dropdown-panel" style={{ top: dropdownPos.top, left: dropdownPos.left, right: dropdownPos.right }}>
                   <div style={{ fontSize: 9, fontWeight: 700, fontFamily: "var(--font-mono)", letterSpacing: "0.12em", color: "var(--text-muted)", marginBottom: 10, textTransform: "uppercase" }}>
                     Sort By
                   </div>
@@ -371,7 +388,7 @@ export default function HomePage() {
             {/* Filter by author */}
             <div ref={filterRef} style={{ position: "relative", flexShrink: 0 }}>
               <button
-                onClick={() => { setShowFilter(v => !v); setShowSort(false); setShowCatFilter(false); }}
+                onClick={() => openDropdown(filterRef, "right", setShowFilter, [setShowSort, setShowCatFilter])}
                 aria-label="Filter by author" aria-expanded={showFilter}
                 style={{
                   width: 52, height: 52,
@@ -402,7 +419,7 @@ export default function HomePage() {
               </button>
 
               {showFilter && (
-                <div className="dropdown-panel" style={{ right: 0 }}>
+                <div className="dropdown-panel" style={{ top: dropdownPos.top, left: dropdownPos.left, right: dropdownPos.right }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                     <span style={{ fontSize: 11, fontWeight: 700, fontFamily: "var(--font-mono)", letterSpacing: "0.08em", color: "var(--text)" }}>
                       FILTER BY AUTHOR
@@ -450,7 +467,7 @@ export default function HomePage() {
             {/* Filter by category */}
             <div ref={catFilterRef} style={{ position: "relative", flexShrink: 0 }}>
               <button
-                onClick={() => { setShowCatFilter(v => !v); setShowSort(false); setShowFilter(false); }}
+                onClick={() => openDropdown(catFilterRef, "right", setShowCatFilter, [setShowSort, setShowFilter])}
                 aria-label="Filter by category" aria-expanded={showCatFilter}
                 style={{
                   width: 52, height: 52,
@@ -478,7 +495,7 @@ export default function HomePage() {
               </button>
 
               {showCatFilter && (
-                <div className="dropdown-panel" style={{ right: 0 }}>
+                <div className="dropdown-panel" style={{ top: dropdownPos.top, left: dropdownPos.left, right: dropdownPos.right }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                     <span style={{ fontSize: 11, fontWeight: 700, fontFamily: "var(--font-mono)", letterSpacing: "0.08em", color: "var(--text)" }}>
                       FILTER BY CATEGORY
@@ -702,7 +719,7 @@ export default function HomePage() {
                     { label: "Trending",     href: "/trending" },
                     { label: "Post Snippet", href: "/post" },
                     { label: "Feedback",     href: "/feedback" },
-                    { label: "Status Server",    href: "/stats" },
+                    { label: "Statistics",    href: "/stats" },
                   ].map(({ label, href }) => (
                     <a key={href} href={href} style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--text-muted)", textDecoration: "underline", textUnderlineOffset: 3, transition: "color .15s" }}
                       onMouseOver={e => (e.currentTarget.style.color = "var(--teal)")}
@@ -808,29 +825,30 @@ export default function HomePage() {
         }
         .search-controls-group {
           display: flex;
-          gap: 10px;
+          gap: 8px;
           align-items: center;
           flex-shrink: 0;
         }
         .dropdown-panel {
-          position: absolute;
-          top: calc(100% + 10px);
+          position: fixed;
           background: var(--surface);
           border: 2.5px solid var(--border-color);
           border-radius: 12px;
           box-shadow: 4px 4px 0 var(--border-color);
           padding: 10px;
           min-width: 200px;
-          z-index: 200;
+          z-index: 500;
         }
         .sort-btn-label { display: inline; }
         .post-btn-label { display: inline; }
 
-        /* ── Mobile: 2-row layout ── */
+        /* ── Mobile ── */
         @media (max-width: 600px) {
           .search-row-wrap {
             flex-wrap: wrap;
             margin-bottom: 12px;
+            padding: 0 12px;
+            gap: 8px;
           }
           .search-row-wrap > div:first-child {
             flex: 1 1 100%;
@@ -838,13 +856,19 @@ export default function HomePage() {
           .search-controls-group {
             flex: 1 1 100%;
             justify-content: flex-start;
+            gap: 8px;
           }
-          /* POST label hidden on mobile to save space */
           .post-btn-label { display: none; }
-          /* Sort label hidden on very small screens */
-        }
-        @media (max-width: 400px) {
           .sort-btn-label { display: none; }
+          .dropdown-panel {
+            left: 12px !important;
+            right: 12px !important;
+            width: auto !important;
+            min-width: unset !important;
+            max-height: 60vh;
+            overflow-y: auto;
+          }
+          .home-hero { padding: 0 12px; }
         }
       `}</style>
     </>
