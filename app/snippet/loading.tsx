@@ -1,2 +1,1 @@
-import PageLoader from "@/components/PageLoader";
-export default function Loading() { return <PageLoader />; }
+export default function Loading() { return null; }

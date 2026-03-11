@@ -3,8 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
-import dynamic from "next/dynamic";
-const PageLoader = dynamic(() => import("@/components/PageLoader"), { ssr: false });
+import PageLoader from "@/components/PageLoader";
 import { getCachedUser, setCachedUser } from "@/lib/authCache";
 
 interface User {

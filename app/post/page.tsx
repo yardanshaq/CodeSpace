@@ -3,8 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
-import dynamic from "next/dynamic";
-const PageLoader = dynamic(() => import("@/components/PageLoader"), { ssr: false });
+import PageLoader from "@/components/PageLoader";
 import { getCachedUser, setCachedUser } from "@/lib/authCache";
 
 interface User {
@@ -913,7 +912,7 @@ export default function PostPage() {
                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = "var(--border-color)"}>
                 CANCEL
               </button>
-              <button onClick={confirmDialog.onConfirm} aria-label={confirmDialog.confirmLabel ?? "Confirm"} style={{ flex: 1, padding: "10px 0", background: "#ef4444", border: "1.5px solid #dc2626", borderRadius: 8, cursor: "pointer", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, color: "#fff", letterSpacing: "0.05em" }}
+              <button onClick={confirmDialog.onConfirm} aria-label={confirmDialog.confirmLabel || "Confirm"} style={{ flex: 1, padding: "10px 0", background: "#ef4444", border: "1.5px solid #dc2626", borderRadius: 8, cursor: "pointer", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, color: "#fff", letterSpacing: "0.05em" }}
                 onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "#dc2626"}
                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "#ef4444"}>
                 DELETE

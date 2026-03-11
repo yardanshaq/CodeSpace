@@ -1,10 +1,9 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
-import dynamic from "next/dynamic";
 import Navbar from "@/components/Navbar";
 
-const PageLoader = dynamic(() => import("@/components/PageLoader"), { ssr: false });
+import PageLoader from "@/components/PageLoader";
 
 interface Hardware {
   cpu: string; cpuCores: number;
@@ -15,12 +14,13 @@ interface Hardware {
 }
 interface ServerStats {
   snippets: number; users: number; views: number;
-  likes: number; comments: number; dbLatency: number;
+  likes: number; comments: number; dbLatency: number; requestDelta: number;
   uptime: number; hardware: Hardware;
   recentSnippets: { id: string; title: string; category: string; createdAt: string; views: number; filename: string }[];
   timestamp: string;
 }
-interface DataPoint { time: string; latency: number; }
+interface DataPoint   { time: string; latency: number; [key: string]: unknown; }
+interface RequestPoint { time: string; count: number; [key: string]: unknown; }
 
 const CAT_COLORS: Record<string, { bg: string; text: string }> = {
   AI: { bg: "#f5c542", text: "#000" }, Anime: { bg: "#f472b6", text: "#000" },
@@ -36,81 +36,120 @@ const fmtNum   = (n: number) => n >= 1e6 ? (n/1e6).toFixed(1)+"M" : n >= 1e3 ? (
 const fmtUp    = (s: number) => { const d=Math.floor(s/86400),h=Math.floor((s%86400)/3600),m=Math.floor((s%3600)/60); return d>0?`${d}d ${h}h ${m}m`:h>0?`${h}h ${m}m`:`${m}m ${Math.floor(s%60)}s`; };
 const fmtDate  = (iso: string) => new Date(iso).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
 
-function LatencyGraph({ data }: { data: DataPoint[] }) {
-  const W = 500, H = 120;
+function DualGraphPanel({ latencyData, reqData, latencyColor }: {
+  latencyData: DataPoint[], reqData: RequestPoint[], latencyColor: string
+}) {
+  const W = 500, H = 160;
   const GRID_COLS = 10, GRID_ROWS = 5;
+  const PAD_L = 42, PAD_R = 42;
+  const IW = W - PAD_L - PAD_R;
 
-  // Grid lines
+  // Latency (left axis)
+  const lVals  = latencyData.map(d => d.latency);
+  const lMin   = Math.max(0, (Math.min(...lVals) || 0) - 5);
+  const lMax   = Math.max(...lVals, lMin + 1) + 5;
+  const lRange = lMax - lMin || 1;
+  const toYL   = (v: number) => H - ((v - lMin) / lRange) * H;
+  const toX    = (i: number, len: number) => PAD_L + (len < 2 ? IW : (i / (len - 1)) * IW);
+
+  // Requests (right axis)
+  const rVals  = reqData.map(d => d.count);
+  const rMin   = 0;
+  const rMax   = Math.max(...rVals, 1) + 2;
+  const rRange = rMax - rMin || 1;
+  const toYR   = (v: number) => H - ((v - rMin) / rRange) * H;
+
+  const empty = latencyData.length < 1 && reqData.length < 1;
+
   const gridLines = [];
   for (let i = 0; i <= GRID_ROWS; i++) {
     const y = (i / GRID_ROWS) * H;
-    gridLines.push(<line key={`h${i}`} x1="0" y1={y} x2={W} y2={y} stroke="var(--grid-line)" strokeWidth="0.5"/>);
+    gridLines.push(<line key={`h${i}`} x1={PAD_L} y1={y} x2={W - PAD_R} y2={y} stroke="var(--border-color)" strokeWidth="0.8" strokeDasharray="3,3"/>);
   }
   for (let i = 0; i <= GRID_COLS; i++) {
-    const x = (i / GRID_COLS) * W;
-    gridLines.push(<line key={`v${i}`} x1={x} y1="0" x2={x} y2={H} stroke="var(--grid-line)" strokeWidth="0.5"/>);
+    const x = PAD_L + (i / GRID_COLS) * IW;
+    gridLines.push(<line key={`v${i}`} x1={x} y1="0" x2={x} y2={H} stroke="var(--border-color)" strokeWidth="0.8" strokeDasharray="3,3"/>);
   }
 
-  if (data.length < 1) return (
-    <div style={{ position:"relative", background:"var(--graph-bg)", borderRadius:4, overflow:"hidden" }}>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width:"100%", height:120, display:"block" }} preserveAspectRatio="none">
-        {gridLines}
-        <text x={W/2} y={H/2} textAnchor="middle" dominantBaseline="middle"
-          style={{ fontFamily:"var(--font-mono)", fontSize:14, fill:"var(--text-faint)" }}>
-          Waiting for data...
-        </text>
-      </svg>
-    </div>
-  );
+  // Left Y labels (latency)
+  const leftLabels = Array.from({length: GRID_ROWS + 1}, (_, i) => {
+    const v = Math.round(lMin + (1 - i / GRID_ROWS) * lRange);
+    const y = (i / GRID_ROWS) * H;
+    return <text key={i} x={PAD_L - 4} y={y} textAnchor="end" dominantBaseline="middle" style={{ fontFamily:"var(--font-mono)", fontSize:"8px", fill:"var(--text-faint)" }}>{v}</text>;
+  });
 
-  const vals = data.map(d => d.latency);
-  const min = Math.max(0, Math.min(...vals) - 10);
-  const max = Math.max(...vals) + 10;
-  const range = max - min || 1;
-  const toY = (v: number) => H - ((v - min) / range) * H;
-  const toX = (i: number) => data.length < 2 ? W / 2 : (i / (data.length - 1)) * W;
+  // Right Y labels (requests)
+  const rightLabels = Array.from({length: GRID_ROWS + 1}, (_, i) => {
+    const v = Math.round(rMin + (1 - i / GRID_ROWS) * rRange);
+    const y = (i / GRID_ROWS) * H;
+    return <text key={i} x={W - PAD_R + 4} y={y} textAnchor="start" dominantBaseline="middle" style={{ fontFamily:"var(--font-mono)", fontSize:"8px", fill:"var(--text-faint)" }}>{v}</text>;
+  });
 
-  const pts = data.map((d, i) => `${toX(i)},${toY(d.latency)}`);
-  const last = vals[vals.length - 1];
-  const color = last < 100 ? "#4ecdc4" : last < 300 ? "#f5c542" : "#f25c54";
-  const lastX = toX(data.length - 1);
-  const lastY = toY(last);
-
-  // Y-axis labels
-  const yLabels = [];
-  for (let i = 0; i <= GRID_ROWS; i++) {
-    const v = Math.round(min + (1 - i / GRID_ROWS) * range);
-    yLabels.push(
-      <div key={i} style={{ position:"absolute", right:0, top:`${(i/GRID_ROWS)*100}%`, transform:"translateY(-50%)", fontFamily:"var(--font-mono)", fontSize:8, color:"var(--text-faint)", pointerEvents:"none", paddingRight:4 }}>
-        {v}ms
-      </div>
+  // Latency line
+  let latencyEl = null;
+  if (latencyData.length > 0) {
+    const pts = latencyData.map((d, i) => `${toX(i, latencyData.length)},${toYL(d.latency)}`).join(" ");
+    const lastX = toX(latencyData.length - 1, latencyData.length);
+    const lastY = toYL(lVals[lVals.length - 1] ?? 0);
+    latencyEl = (
+      <>
+        <defs>
+          <linearGradient id="grad-lat" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={latencyColor} stopOpacity="0.18"/>
+            <stop offset="100%" stopColor={latencyColor} stopOpacity="0"/>
+          </linearGradient>
+          <clipPath id="clip-graph">
+            <rect x={PAD_L} y="0" width={IW} height={H}/>
+          </clipPath>
+        </defs>
+        <polygon clipPath="url(#clip-graph)" points={`${PAD_L},${H} ${pts} ${W - PAD_R},${H}`} fill="url(#grad-lat)"/>
+        <polyline clipPath="url(#clip-graph)" points={pts} fill="none" stroke={latencyColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        <circle cx={lastX} cy={lastY} r="3.5" fill={latencyColor} stroke="var(--card-bg)" strokeWidth="1.5"/>
+      </>
     );
   }
 
-  const polyPts = data.length < 2
-    ? `0,${toY(last)} ${W},${toY(last)}`
-    : pts.join(" ");
+  // Request line
+  let reqEl = null;
+  if (reqData.length > 0) {
+    const pts = reqData.map((d, i) => `${toX(i, reqData.length)},${toYR(d.count)}`).join(" ");
+    const lastX = toX(reqData.length - 1, reqData.length);
+    const lastY = toYR(rVals[rVals.length - 1] ?? 0);
+    reqEl = (
+      <>
+        <polyline clipPath="url(#clip-graph)" points={pts} fill="none" stroke="var(--text)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        <circle cx={lastX} cy={lastY} r="3.5" fill="var(--text)" stroke="var(--card-bg)" strokeWidth="1.5"/>
+      </>
+    );
+  }
+
+  // X axis time labels
+  const allTimes = latencyData.length > 0 ? latencyData : reqData;
+  const xFirst = allTimes[0]?.time ?? "";
+  const xLast  = allTimes[allTimes.length - 1]?.time ?? "";
 
   return (
-    <div style={{ position:"relative" }}>
-      <div style={{ position:"relative", background:"var(--graph-bg)", borderRadius:4, overflow:"hidden" }}>
-        <svg viewBox={`0 0 ${W} ${H}`} style={{ width:"100%", height:120, display:"block", overflow:"visible" }} preserveAspectRatio="none">
-          <defs>
-            <linearGradient id="glg" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={color} stopOpacity="0.25"/>
-              <stop offset="100%" stopColor={color} stopOpacity="0"/>
-            </linearGradient>
-          </defs>
-          {gridLines}
-          <polygon points={`0,${H} ${polyPts} ${W},${H}`} fill="url(#glg)"/>
-          <polyline points={polyPts} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-          <circle cx={lastX} cy={lastY} r="3" fill={color} stroke="var(--card-bg)" strokeWidth="1.5"/>
-        </svg>
-        {yLabels}
-      </div>
+    <div>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width:"100%", height:180, display:"block", overflow:"visible" }} preserveAspectRatio="none">
+        {gridLines}
+        {leftLabels}
+        {rightLabels}
+        {latencyEl}
+        {reqEl}
+        {empty && (
+          <text x={W/2} y={H/2} textAnchor="middle" dominantBaseline="middle"
+            style={{ fontFamily:"var(--font-mono)", fontSize:14, fill:"var(--text-faint)" }}>
+            Waiting for data...
+          </text>
+        )}
+        {/* Axis labels */}
+        <text x={PAD_L - 4} y={H + 14} textAnchor="start" style={{ fontFamily:"var(--font-mono)", fontSize:"7px", fill:"var(--text-faint)" }}>{xFirst}</text>
+        <text x={W - PAD_R + 4} y={H + 14} textAnchor="end" style={{ fontFamily:"var(--font-mono)", fontSize:"7px", fill:"var(--text-faint)" }}>{xLast}</text>
+      </svg>
     </div>
   );
 }
+
 
 function MemBar({ used, total }: { used: number; total: number }) {
   const pct=(used/total)*100;
@@ -141,7 +180,8 @@ export default function StatsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState(false);
   const [lastUp, setLastUp]   = useState<Date | null>(null);
-  const [history, setHistory] = useState<DataPoint[]>([]);
+  const [history, setHistory]         = useState<DataPoint[]>([]);
+  const [reqHistory, setReqHistory]   = useState<RequestPoint[]>([]);
   const timer = useRef<NodeJS.Timeout | null>(null);
   const busy = useRef(false);
 
@@ -154,10 +194,9 @@ export default function StatsPage() {
       if (!r.ok) throw new Error();
       const d: ServerStats = await r.json();
       setStats(d); setLastUp(new Date()); setError(false);
-      setHistory(prev => {
-        const now = new Date().toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
-        return [...prev, { time: now, latency: d.dbLatency }].slice(-20);
-      });
+      const now = new Date().toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
+      setHistory(prev    => [...prev, { time: now, latency: d.dbLatency }].slice(-20));
+      setReqHistory(prev => [...prev, { time: now, count: d.requestDelta ?? 0 }].slice(-20));
     } catch { setError(true); }
     finally { if (!silent) setLoading(false); busy.current = false; }
   }, []);
@@ -245,28 +284,42 @@ const healthy = stats && stats.dbLatency < 300;
               <div style={{ border:"2.5px solid var(--border-color)", borderRadius:12, background:"var(--card-bg)", boxShadow:"4px 4px 0 var(--border-color)", overflow:"hidden" }}>
                 <div style={{ padding:"14px 20px", borderBottom:"1.5px solid var(--border-color)", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
                   <div style={{ fontFamily:"var(--font-mono)", fontSize:9, fontWeight:700, letterSpacing:"0.14em", textTransform:"uppercase", color:"var(--text-muted)" }}>
-                    DB Latency — Activity Flow
+                    DB Latency  ·  Activity Flow
                   </div>
                   <div style={{ display:"flex", alignItems:"center", gap:5 }}>
                     <div style={{ width:6, height:6, borderRadius:"50%", background:"var(--teal)", boxShadow:"0 0 5px var(--teal)" }}/>
                     <span style={{ fontFamily:"var(--font-mono)", fontSize:9, color:"var(--text-faint)" }}>LIVE</span>
                   </div>
                 </div>
-                <div style={{ padding:"14px 16px 12px" }}>
-                  <div style={{ marginBottom:14 }}>
-                    <span style={{ fontFamily:"var(--font-mono)", fontSize:26, fontWeight:700, color: stats.dbLatency<100?"var(--teal)":stats.dbLatency<300?"#f5c542":"#f25c54" }}>
-                      {stats.dbLatency}
-                    </span>
-                    <span style={{ fontFamily:"var(--font-mono)", fontSize:12, color:"var(--text-faint)", marginLeft:4 }}>ms</span>
-                    <span style={{ fontFamily:"var(--font-mono)", fontSize:9, fontWeight:700, color:stats.dbLatency<100?"var(--teal)":stats.dbLatency<300?"#f5c542":"#f25c54", marginLeft:10, letterSpacing:"0.08em" }}>
-                      {stats.dbLatency<100?"● EXCELLENT":stats.dbLatency<300?"● NORMAL":"● DEGRADED"}
-                    </span>
+                <div style={{ padding:"14px 16px 16px" }}>
+                  {/* Legend + live values */}
+                  <div style={{ display:"flex", alignItems:"center", gap:20, marginBottom:12 }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                      <div style={{ width:16, height:2.5, borderRadius:2, background:"var(--text)" }}/>
+                      <span style={{ fontFamily:"var(--font-mono)", fontSize:9, fontWeight:700, letterSpacing:"0.1em", textTransform:"uppercase", color:"var(--text-faint)" }}>REQUEST</span>
+                      <span style={{ fontFamily:"var(--font-mono)", fontSize:13, fontWeight:700, color:"var(--text)" }}>
+                        {reqHistory.length > 0 ? reqHistory[reqHistory.length-1].count : 0}
+                      </span>
+                      <span style={{ fontFamily:"var(--font-mono)", fontSize:9, color:"var(--text-faint)" }}>/ 30s</span>
+                    </div>
+                    <div style={{ width:1, height:16, background:"var(--divider)" }}/>
+                    <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                      <div style={{ width:16, height:2.5, borderRadius:2, background:stats.dbLatency<100?"#4ecdc4":stats.dbLatency<300?"#f5c542":"#f25c54" }}/>
+                      <span style={{ fontFamily:"var(--font-mono)", fontSize:9, fontWeight:700, letterSpacing:"0.1em", textTransform:"uppercase", color:"var(--text-faint)" }}>LATENCY</span>
+                      <span style={{ fontFamily:"var(--font-mono)", fontSize:13, fontWeight:700, color:stats.dbLatency<100?"#4ecdc4":stats.dbLatency<300?"#f5c542":"#f25c54" }}>
+                        {stats.dbLatency}
+                      </span>
+                      <span style={{ fontFamily:"var(--font-mono)", fontSize:9, color:"var(--text-faint)" }}>ms</span>
+                      <span style={{ fontFamily:"var(--font-mono)", fontSize:9, fontWeight:700, color:stats.dbLatency<100?"#4ecdc4":stats.dbLatency<300?"#f5c542":"#f25c54", letterSpacing:"0.06em" }}>
+                        {stats.dbLatency<100?"● EXCELLENT":stats.dbLatency<300?"● NORMAL":"● DEGRADED"}
+                      </span>
+                    </div>
                   </div>
-                  <div style={{ margin: "0 -2px" }}><LatencyGraph data={history}/></div>
-                  <div style={{ fontFamily:"var(--font-mono)", fontSize:9, color:"var(--text-faint)", marginTop:6, display:"flex", justifyContent:"space-between" }}>
-                    <span>{history[0]?.time ?? "—"}</span>
-                    <span>{history[history.length-1]?.time ?? "—"}</span>
-                  </div>
+                  <DualGraphPanel
+                    latencyData={history}
+                    reqData={reqHistory}
+                    latencyColor={stats.dbLatency<100?"#4ecdc4":stats.dbLatency<300?"#f5c542":"#f25c54"}
+                  />
                 </div>
               </div>
 

@@ -3,8 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
-import dynamic from "next/dynamic";
-const PageLoader = dynamic(() => import("@/components/PageLoader"), { ssr: false });
+import PageLoader from "@/components/PageLoader";
 
 interface GlobalFile {
   id: string;
