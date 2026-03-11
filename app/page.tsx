@@ -35,7 +35,7 @@ const SORT_OPTIONS: { field: SortField; labelAsc: string; labelDesc: string }[] 
   { field: "views",     labelAsc: "Views: Lowest", labelDesc: "Views: Highest" },
 ];
 
-// ── Category color map (shared dengan trending page) ──────────────────────────
+// ── Category color map ──────────────────────────────────────────────────────
 const CATEGORY_COLORS: Record<string, { bg: string; text: string }> = {
   AI:         { bg: "#f5c542", text: "#000" },
   Anime:      { bg: "#f472b6", text: "#000" },
@@ -77,23 +77,6 @@ export default function HomePage() {
   const [showFilter, setShowFilter]           = useState(false);
   const [showSort, setShowSort]               = useState(false);
   const [showCatFilter, setShowCatFilter]     = useState(false);
-  const [dropdownPos, setDropdownPos]         = useState<{top:number,left?:number,right?:number}>({top:0});
-
-  const openDropdown = (ref: React.RefObject<HTMLDivElement>, side: "left"|"right", setter: React.Dispatch<React.SetStateAction<boolean>>, others: Array<React.Dispatch<React.SetStateAction<boolean>>>) => {
-    others.forEach(fn => fn(false));
-    if (ref.current) {
-      const r = ref.current.getBoundingClientRect();
-      const isMobile = window.innerWidth <= 600;
-      if (isMobile) {
-        setDropdownPos({ top: r.bottom + 8 });
-      } else {
-        setDropdownPos(side === "left"
-          ? { top: r.bottom + 8, left: r.left }
-          : { top: r.bottom + 8, right: window.innerWidth - r.right });
-      }
-    }
-    setter(v => !v);
-  };
   const [sortBy, setSortBy]                   = useState<SortField>("createdAt");
   const [order, setOrder]                     = useState<SortOrder>("desc");
   const [user, setUser]                       = useState<NavUser | null>(null);
@@ -119,6 +102,17 @@ export default function HomePage() {
     checkAuth();
     window.addEventListener("auth-change", checkAuth);
     return () => window.removeEventListener("auth-change", checkAuth);
+  }, []);
+
+  // ── Close dropdowns on scroll (fix Android & all platforms) ──────────────
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowFilter(false);
+      setShowSort(false);
+      setShowCatFilter(false);
+    };
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
   useEffect(() => {
@@ -149,15 +143,13 @@ export default function HomePage() {
       const data = await res.json();
       const list = Array.isArray(data) ? data : [];
 
-      const unique = Array.from(new Set(list.map((s: Snippet) => s.admin.username))) as string[];
+      const unique     = Array.from(new Set(list.map((s: Snippet) => s.admin.username))) as string[];
       const uniqueCats = Array.from(new Set(list.map((s: Snippet) => s.category))) as string[];
 
-      // Apply author filter
       let filtered = selectedAuthors.length > 0
         ? list.filter((s: Snippet) => selectedAuthors.includes(s.admin.username))
         : list;
 
-      // Apply category filter
       if (selectedCategories.length > 0) {
         filtered = filtered.filter((s: Snippet) => selectedCategories.includes(s.category));
       }
@@ -203,7 +195,6 @@ export default function HomePage() {
     if (!gridRef.current || snippets.length === 0) return;
     const cards = Array.from(gridRef.current.querySelectorAll<HTMLElement>('.snippet-card'));
 
-    // Fallback: kalau observer tidak fire dalam 1.5s, paksa semua visible
     const fallback = setTimeout(() => {
       cards.forEach(c => c.classList.add('visible'));
     }, 1500);
@@ -211,7 +202,7 @@ export default function HomePage() {
     const obs = new IntersectionObserver((entries) => {
       entries.forEach(entry => {
         if (entry.isIntersecting) {
-          const el = entry.target as HTMLElement;
+          const el  = entry.target as HTMLElement;
           const idx = cards.indexOf(el);
           setTimeout(() => el.classList.add('visible'), (idx % 3) * 60);
           obs.unobserve(el);
@@ -239,7 +230,12 @@ export default function HomePage() {
     return order === "asc" ? opt.labelAsc : opt.labelDesc;
   })();
 
-  const totalActiveFilters = selectedAuthors.length + selectedCategories.length;
+  // Close all dropdowns helper
+  const closeAllDropdowns = () => {
+    setShowFilter(false);
+    setShowSort(false);
+    setShowCatFilter(false);
+  };
 
   return (
     <>
@@ -295,7 +291,6 @@ export default function HomePage() {
               Send Feedback
             </button>
           </div>
-
         </div>
 
         {/* ── Search + Controls row ── */}
@@ -327,7 +322,7 @@ export default function HomePage() {
             {/* Sort button */}
             <div ref={sortRef} style={{ position: "relative", flexShrink: 0 }}>
               <button
-                onClick={() => openDropdown(sortRef, "left", setShowSort, [setShowFilter, setShowCatFilter])}
+                onClick={() => { setShowSort(v => !v); setShowFilter(false); setShowCatFilter(false); }}
                 aria-label="Sort snippets" aria-expanded={showSort}
                 style={{
                   height: 52, padding: "0 14px",
@@ -346,49 +341,51 @@ export default function HomePage() {
               </button>
 
               {showSort && (
-                <div className="dropdown-panel" style={{ top: dropdownPos.top, left: dropdownPos.left, right: dropdownPos.right }}>
-                  <div style={{ fontSize: 9, fontWeight: 700, fontFamily: "var(--font-mono)", letterSpacing: "0.12em", color: "var(--text-muted)", marginBottom: 10, textTransform: "uppercase" }}>
-                    Sort By
-                  </div>
-                  {SORT_OPTIONS.map(opt => (
-                    <div key={opt.field}>
-                      {(["asc", "desc"] as SortOrder[]).map(dir => {
-                        const label    = dir === "asc" ? opt.labelAsc : opt.labelDesc;
-                        const isActive = sortBy === opt.field && order === dir;
-                        return (
-                          <div
-                            key={dir}
-                            onClick={() => { setSortBy(opt.field); setOrder(dir); setShowSort(false); }}
-                            onMouseDown={(e) => { e.preventDefault(); setSortBy(opt.field); setOrder(dir); setShowSort(false); }}
-                            style={{
-                              padding: "8px 10px", borderRadius: 8, cursor: "pointer",
-                              background: isActive ? "var(--teal)" : "transparent",
-                              color: isActive ? "#000" : "var(--text)",
-                              fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: isActive ? 700 : 600,
-                              display: "flex", alignItems: "center", gap: 8,
-                            }}
-                            onMouseOver={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "var(--surface2)"; }}
-                            onMouseOut={e  => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
-                          >
-                            {isActive && (
-                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                                <polyline points="20 6 9 17 4 12"/>
-                              </svg>
-                            )}
-                            {label}
-                          </div>
-                        );
-                      })}
+                <>
+                  <div className="dropdown-panel dropdown-panel-sort">
+                    <div style={{ fontSize: 9, fontWeight: 700, fontFamily: "var(--font-mono)", letterSpacing: "0.12em", color: "var(--text-muted)", marginBottom: 10, textTransform: "uppercase" }}>
+                      Sort By
                     </div>
-                  ))}
-                </div>
+                    {SORT_OPTIONS.map(opt => (
+                      <div key={opt.field}>
+                        {(["asc", "desc"] as SortOrder[]).map(dir => {
+                          const label    = dir === "asc" ? opt.labelAsc : opt.labelDesc;
+                          const isActive = sortBy === opt.field && order === dir;
+                          return (
+                            <div
+                              key={dir}
+                              onClick={() => { setSortBy(opt.field); setOrder(dir); setShowSort(false); }}
+                              onMouseDown={(e) => { e.preventDefault(); setSortBy(opt.field); setOrder(dir); setShowSort(false); }}
+                              style={{
+                                padding: "8px 10px", borderRadius: 8, cursor: "pointer",
+                                background: isActive ? "var(--teal)" : "transparent",
+                                color: isActive ? "#000" : "var(--text)",
+                                fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: isActive ? 700 : 600,
+                                display: "flex", alignItems: "center", gap: 8,
+                              }}
+                              onMouseOver={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "var(--surface2)"; }}
+                              onMouseOut={e  => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                            >
+                              {isActive && (
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                  <polyline points="20 6 9 17 4 12"/>
+                                </svg>
+                              )}
+                              {label}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                </>
               )}
             </div>
 
             {/* Filter by author */}
             <div ref={filterRef} style={{ position: "relative", flexShrink: 0 }}>
               <button
-                onClick={() => openDropdown(filterRef, "right", setShowFilter, [setShowSort, setShowCatFilter])}
+                onClick={() => { setShowFilter(v => !v); setShowSort(false); setShowCatFilter(false); }}
                 aria-label="Filter by author" aria-expanded={showFilter}
                 style={{
                   width: 52, height: 52,
@@ -419,55 +416,57 @@ export default function HomePage() {
               </button>
 
               {showFilter && (
-                <div className="dropdown-panel" style={{ top: dropdownPos.top, left: dropdownPos.left, right: dropdownPos.right }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, fontFamily: "var(--font-mono)", letterSpacing: "0.08em", color: "var(--text)" }}>
-                      FILTER BY AUTHOR
-                    </span>
+                <>
+                  <div className="dropdown-panel dropdown-panel-right">
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, fontFamily: "var(--font-mono)", letterSpacing: "0.08em", color: "var(--text)" }}>
+                        FILTER BY AUTHOR
+                      </span>
+                      {selectedAuthors.length > 0 && (
+                        <button onClick={clearAuthors} aria-label="Clear author filters" style={{ fontSize: 10, fontFamily: "var(--font-mono)", background: "none", border: "none", cursor: "pointer", color: "var(--red)", fontWeight: 700 }}>
+                          CLEAR
+                        </button>
+                      )}
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {authors.map(a => {
+                        const selected = selectedAuthors.includes(a);
+                        return (
+                          <div key={a} onClick={() => toggleAuthor(a)} style={{
+                            display: "flex", alignItems: "center", gap: 10, padding: "8px 10px",
+                            border: `2px solid ${selected ? "var(--teal)" : "var(--border-color)"}`,
+                            borderRadius: 8, cursor: "pointer",
+                            background: selected ? "rgba(78,205,196,0.1)" : "var(--surface)",
+                            boxShadow: selected ? "2px 2px 0 var(--teal)" : "2px 2px 0 var(--border-color)",
+                            transition: "all .1s",
+                          }}>
+                            <div style={{
+                              width: 18, height: 18, border: "2px solid var(--border-color)", borderRadius: 4,
+                              background: selected ? "var(--teal)" : "var(--surface)",
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                              fontSize: 11, fontWeight: 700, flexShrink: 0, color: "#000",
+                            }}>
+                              {selected && "x"}
+                            </div>
+                            <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", fontWeight: 600, color: "var(--text)" }}>{a}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
                     {selectedAuthors.length > 0 && (
-                      <button onClick={clearAuthors} aria-label="Clear author filters" style={{ fontSize: 10, fontFamily: "var(--font-mono)", background: "none", border: "none", cursor: "pointer", color: "var(--red)", fontWeight: 700 }}>
-                        CLEAR
-                      </button>
+                      <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1.5px solid var(--divider)", fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                        {selectedAuthors.length} author{selectedAuthors.length > 1 ? "s" : ""} selected
+                      </div>
                     )}
                   </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {authors.map(a => {
-                      const selected = selectedAuthors.includes(a);
-                      return (
-                        <div key={a} onClick={() => toggleAuthor(a)} style={{
-                          display: "flex", alignItems: "center", gap: 10, padding: "8px 10px",
-                          border: `2px solid ${selected ? "var(--teal)" : "var(--border-color)"}`,
-                          borderRadius: 8, cursor: "pointer",
-                          background: selected ? "rgba(78,205,196,0.1)" : "var(--surface)",
-                          boxShadow: selected ? "2px 2px 0 var(--teal)" : "2px 2px 0 var(--border-color)",
-                          transition: "all .1s",
-                        }}>
-                          <div style={{
-                            width: 18, height: 18, border: "2px solid var(--border-color)", borderRadius: 4,
-                            background: selected ? "var(--teal)" : "var(--surface)",
-                            display: "flex", alignItems: "center", justifyContent: "center",
-                            fontSize: 11, fontWeight: 700, flexShrink: 0, color: "#000",
-                          }}>
-                            {selected && "x"}
-                          </div>
-                          <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", fontWeight: 600, color: "var(--text)" }}>{a}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  {selectedAuthors.length > 0 && (
-                    <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1.5px solid var(--divider)", fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-                      {selectedAuthors.length} author{selectedAuthors.length > 1 ? "s" : ""} selected
-                    </div>
-                  )}
-                </div>
+                </>
               )}
             </div>
 
             {/* Filter by category */}
             <div ref={catFilterRef} style={{ position: "relative", flexShrink: 0 }}>
               <button
-                onClick={() => openDropdown(catFilterRef, "right", setShowCatFilter, [setShowSort, setShowFilter])}
+                onClick={() => { setShowCatFilter(v => !v); setShowSort(false); setShowFilter(false); }}
                 aria-label="Filter by category" aria-expanded={showCatFilter}
                 style={{
                   width: 52, height: 52,
@@ -495,54 +494,55 @@ export default function HomePage() {
               </button>
 
               {showCatFilter && (
-                <div className="dropdown-panel" style={{ top: dropdownPos.top, left: dropdownPos.left, right: dropdownPos.right }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, fontFamily: "var(--font-mono)", letterSpacing: "0.08em", color: "var(--text)" }}>
-                      FILTER BY CATEGORY
-                    </span>
+                <>
+                  <div className="dropdown-panel dropdown-panel-right">
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, fontFamily: "var(--font-mono)", letterSpacing: "0.08em", color: "var(--text)" }}>
+                        FILTER BY CATEGORY
+                      </span>
+                      {selectedCategories.length > 0 && (
+                        <button onClick={clearCategories} aria-label="Clear category filters" style={{ fontSize: 10, fontFamily: "var(--font-mono)", background: "none", border: "none", cursor: "pointer", color: "var(--red)", fontWeight: 700 }}>
+                          CLEAR
+                        </button>
+                      )}
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {categories.map(cat => {
+                        const selected = selectedCategories.includes(cat);
+                        const catStyle = getCategoryStyle(cat);
+                        return (
+                          <div key={cat} onClick={() => toggleCategory(cat)} style={{
+                            display: "flex", alignItems: "center", gap: 10, padding: "8px 10px",
+                            border: `2px solid ${selected ? catStyle.bg : "var(--border-color)"}`,
+                            borderRadius: 8, cursor: "pointer",
+                            background: selected ? `${catStyle.bg}22` : "var(--surface)",
+                            boxShadow: selected ? `2px 2px 0 ${catStyle.bg}` : "2px 2px 0 var(--border-color)",
+                            transition: "all .1s",
+                          }}>
+                            <div style={{
+                              width: 18, height: 18, border: `2px solid ${selected ? catStyle.bg : "var(--border-color)"}`, borderRadius: 4,
+                              background: selected ? catStyle.bg : "var(--surface)",
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                              fontSize: 11, fontWeight: 700, flexShrink: 0, color: catStyle.text,
+                            }}>
+                              {selected && "x"}
+                            </div>
+                            <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", fontWeight: 600, color: "var(--text)" }}>{cat}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
                     {selectedCategories.length > 0 && (
-                      <button onClick={clearCategories} aria-label="Clear category filters" style={{ fontSize: 10, fontFamily: "var(--font-mono)", background: "none", border: "none", cursor: "pointer", color: "var(--red)", fontWeight: 700 }}>
-                        CLEAR
-                      </button>
+                      <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1.5px solid var(--divider)", fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                        {selectedCategories.length} categor{selectedCategories.length > 1 ? "ies" : "y"} selected
+                      </div>
                     )}
                   </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {categories.map(cat => {
-                      const selected = selectedCategories.includes(cat);
-                      const catStyle = getCategoryStyle(cat);
-                      return (
-                        <div key={cat} onClick={() => toggleCategory(cat)} style={{
-                          display: "flex", alignItems: "center", gap: 10, padding: "8px 10px",
-                          border: `2px solid ${selected ? catStyle.bg : "var(--border-color)"}`,
-                          borderRadius: 8, cursor: "pointer",
-                          background: selected ? `${catStyle.bg}22` : "var(--surface)",
-                          boxShadow: selected ? `2px 2px 0 ${catStyle.bg}` : "2px 2px 0 var(--border-color)",
-                          transition: "all .1s",
-                        }}>
-                          <div style={{
-                            width: 18, height: 18, border: `2px solid ${selected ? catStyle.bg : "var(--border-color)"}`, borderRadius: 4,
-                            background: selected ? catStyle.bg : "var(--surface)",
-                            display: "flex", alignItems: "center", justifyContent: "center",
-                            fontSize: 11, fontWeight: 700, flexShrink: 0, color: catStyle.text,
-                          }}>
-                            {selected && "x"}
-                          </div>
-                          <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", fontWeight: 600, color: "var(--text)" }}>{cat}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  {selectedCategories.length > 0 && (
-                    <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1.5px solid var(--divider)", fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-                      {selectedCategories.length} categor{selectedCategories.length > 1 ? "ies" : "y"} selected
-                    </div>
-                  )}
-                </div>
+                </>
               )}
             </div>
 
-            {/* POST button — always rendered to prevent layout shift (CLS) */}
-            {/* Invisible placeholder before auth check, hidden when not logged in */}
+            {/* POST button */}
             <button
               onClick={handlePostClick}
               title="Post a snippet"
@@ -555,7 +555,6 @@ export default function HomePage() {
                 display: "flex", alignItems: "center", gap: 7,
                 fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700,
                 letterSpacing: "0.06em", whiteSpace: "nowrap",
-                // Collapse to zero width when not logged in — no layout shift
                 maxWidth: userChecked && !user ? 0 : 200,
                 padding: userChecked && !user ? 0 : "0 18px",
                 border: userChecked && !user ? "none" : "2.5px solid var(--border-color)",
@@ -603,7 +602,6 @@ export default function HomePage() {
 
                   <span className="snippet-filename">{snippet.filename}</span>
 
-                  {/* Category badge — original class + color only */}
                   <span
                     className="snippet-category-badge"
                     style={{ background: catStyle.bg, color: catStyle.text, borderColor: catStyle.bg }}
@@ -715,11 +713,11 @@ export default function HomePage() {
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   {[
-                    { label: "Home",         href: "/" },
-                    { label: "Trending",     href: "/trending" },
-                    { label: "Post Snippet", href: "/post" },
-                    { label: "Feedback",     href: "/feedback" },
-                    { label: "Statistics",    href: "/stats" },
+                    { label: "Home",          href: "/" },
+                    { label: "Trending",      href: "/trending" },
+                    { label: "Post Snippet",  href: "/post" },
+                    { label: "Feedback",      href: "/feedback" },
+                    { label: "Status Server", href: "/stats" },
                   ].map(({ label, href }) => (
                     <a key={href} href={href} style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--text-muted)", textDecoration: "underline", textUnderlineOffset: 3, transition: "color .15s" }}
                       onMouseOver={e => (e.currentTarget.style.color = "var(--teal)")}
@@ -770,7 +768,7 @@ export default function HomePage() {
         </div>
 
         {/* Bottom bar */}
-        <div style={{
+        <div className="footer-bottom" style={{
           borderTop: "1.5px solid var(--border-color)",
           padding: "12px 24px", display: "flex", justifyContent: "space-between",
           alignItems: "center", gap: 12, flexWrap: "wrap",
@@ -825,30 +823,44 @@ export default function HomePage() {
         }
         .search-controls-group {
           display: flex;
-          gap: 8px;
+          gap: 10px;
           align-items: center;
           flex-shrink: 0;
         }
+
+        /* ── Dropdown (semua platform) ── */
+        .dropdown-backdrop  { display: none; }
+        .dropdown-drag-handle { display: none; }
+
         .dropdown-panel {
-          position: fixed;
+          position: absolute;
+          top: calc(100% + 10px);
           background: var(--surface);
           border: 2.5px solid var(--border-color);
           border-radius: 12px;
           box-shadow: 4px 4px 0 var(--border-color);
           padding: 10px;
           min-width: 200px;
-          z-index: 500;
+          max-height: 60vh;
+          overflow-y: auto;
+          z-index: 300;
+          /* Jangan biarkan keluar dari viewport kanan/kiri */
+          max-width: min(260px, calc(100vw - 24px));
         }
+        .dropdown-panel-sort  { left: 0; }
+        .dropdown-panel-right { right: 0; }
+
+        /* Pastikan parent wrapper tidak clip dropdown */
+        .search-controls-group > div { overflow: visible; }
+
         .sort-btn-label { display: inline; }
         .post-btn-label { display: inline; }
 
-        /* ── Mobile ── */
+        /* ── Mobile: 2-row layout ── */
         @media (max-width: 600px) {
           .search-row-wrap {
             flex-wrap: wrap;
             margin-bottom: 12px;
-            padding: 0 12px;
-            gap: 8px;
           }
           .search-row-wrap > div:first-child {
             flex: 1 1 100%;
@@ -856,19 +868,21 @@ export default function HomePage() {
           .search-controls-group {
             flex: 1 1 100%;
             justify-content: flex-start;
-            gap: 8px;
           }
           .post-btn-label { display: none; }
-          .sort-btn-label { display: none; }
-          .dropdown-panel {
-            left: 12px !important;
-            right: 12px !important;
-            width: auto !important;
-            min-width: unset !important;
-            max-height: 60vh;
-            overflow-y: auto;
+
+          /* Di mobile semua tombol ada di sisi KIRI layar,
+             jadi semua dropdown harus rata kiri juga */
+          .dropdown-panel,
+          .dropdown-panel-sort,
+          .dropdown-panel-right {
+            left: 0 !important;
+            right: auto !important;
           }
-          .home-hero { padding: 0 12px; }
+        }
+
+        @media (max-width: 400px) {
+          .sort-btn-label { display: none; }
         }
       `}</style>
     </>
