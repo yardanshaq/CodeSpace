@@ -49,9 +49,9 @@
   --text-faint:   #666666;
   --border-color: #444444;
   --border:       2.5px solid var(--border-color);
-  --shadow:       4px 4px 0px #333333;
-  --shadow-lg:    6px 6px 0px #333333;
-  --shadow-sm:    2px 2px 0px #333333;
+  --shadow:       4px 4px 0px #000;
+  --shadow-lg:    6px 6px 0px #000;
+  --shadow-sm:    2px 2px 0px #000;
   --teal:         #3bbdb5;
   --yellow:       #e6c200;
   --red:          #e04c44;
@@ -94,6 +94,7 @@ body:has(.cs-loader-logo)::-webkit-scrollbar {
 }
 
 
+/* ── NAVBAR ─────────────────────────────────────────────────────────────── */
 /* ── NAVBAR ──────────────────────────────────────────────────────────────── */
 /* Floating pill — all styling is inline in Navbar.tsx */
 /* Legacy classes kept for compat */
@@ -412,12 +413,12 @@ body:has(.cs-loader-logo)::-webkit-scrollbar {
   background: var(--surface2);
   color: var(--text);
   outline: none;
-  transition: box-shadow 0.18s, background 0.18s;
+  transition: border-color 0.18s, box-shadow 0.18s, background 0.18s;
   box-sizing: border-box;
 }
 .input-field:focus {
-  border-color: var(--border-color);
-  box-shadow: var(--shadow-sm);
+  border-color: var(--teal);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--teal) 12%, transparent);
   background: var(--surface);
 }
 .input-field:hover:not(:focus) { border-color: var(--text-muted); }
@@ -666,7 +667,7 @@ body:has(.cs-loader-logo)::-webkit-scrollbar {
 
 /* ── MOBILE ──────────────────────────────────────────────────────────────── */
 @media (max-width: 640px) {
-  .main { padding: 14px 12px; }
+  .main { padding: 10px 10px; }
 
   .navbar { display: none; }
   .nav-brand-text { display: none; }
@@ -675,47 +676,15 @@ body:has(.cs-loader-logo)::-webkit-scrollbar {
   .nav-center-links { flex: 1 !important; }
   .nav-username-text { display: none; }
 
-  .home-title { font-size: 32px; letter-spacing: -0.5px; }
-  .home-hero { margin-bottom: 20px; }
-  .search-container { margin-bottom: 20px; }
-  .search-input { padding: 13px 46px 13px 14px; font-size: 16px; }
+  .home-title { font-size: 26px; letter-spacing: -0.5px; }
+  .home-subtitle { font-size: 12px; }
+  .home-hero { margin-bottom: 14px; gap: 10px; }
+  .search-container { margin-bottom: 14px; }
+  .search-input { padding: 11px 40px 11px 12px; font-size: 14px; }
 
-  /* Search row mobile: search + filter tetap 1 baris, tidak wrap */
-  .search-row {
-    flex-wrap: nowrap !important;
-    gap: 8px;
-    margin-bottom: 24px !important;
-  }
-  .search-row > div:first-child {
-    flex: 1 !important;
-    min-width: 0;
-  }
-  .search-row .search-input {
-    font-size: 16px;
-    padding: 14px 46px 14px 14px;
-  }
-  /* Filter button - compact square on mobile */
-  .search-action-btn {
-    flex: 0 0 auto !important;
-  }
-  .search-action-btn > button[title="Filter by author"] {
-    width: 50px !important;
-    height: 50px !important;
-    padding: 0 !important;
-    border-radius: 12px !important;
-    flex-shrink: 0;
-  }
-  /* POST button when logged in */
-  button.search-action-btn {
-    height: 50px !important;
-    padding: 0 14px !important;
-    font-size: 12px !important;
-    flex: 0 0 auto !important;
-  }
-
-  .snippets-grid { grid-template-columns: 1fr; gap: 10px; }
-  .snippet-card { padding: 14px; gap: 10px; }
-  .snippet-card-title { font-size: 14px; }
+  .snippets-grid { grid-template-columns: 1fr; gap: 8px; }
+  .snippet-card { padding: 12px; gap: 8px; }
+  .snippet-card-title { font-size: 13px; }
 
   .snippet-detail-header { flex-direction: column; align-items: flex-start; padding: 14px; gap: 10px; }
   .snippet-detail-title { font-size: 17px; margin: 4px 0; }
@@ -804,18 +773,20 @@ body:has(.cs-loader-logo)::-webkit-scrollbar {
   border-width: 0;
 }
 
-/* Focus visible — no teal ring on any element */
+/* Focus visible for keyboard navigation */
 :focus-visible {
-  outline: none;
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
 }
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: none;
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
-
 /* ── PAGE LOADER ─────────────────────────────────────────────────────────── */
 @keyframes cs-loader-bounce {
   0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
@@ -833,4 +804,13 @@ textarea:focus-visible {
 /* Logo dark — invert supaya tidak glitch hitam saat dark mode */
 [data-theme="dark"] .cs-loader-logo {
   filter: invert(1);
+}
+
+/* ── Instant navigation overlay (no React delay) ─────────── */
+body.nav-loading::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  z-index: 8999;
 }

@@ -7,6 +7,8 @@ export default function PageLoader({ timeoutMs = 15000 }: { timeoutMs?: number }
   const [timedOut, setTimedOut] = useState(false);
 
   useEffect(() => {
+    // Remove the instant overlay — PageLoader is now handling visuals
+    document.body.classList.remove("nav-loading");
     const timer = setTimeout(() => setTimedOut(true), timeoutMs);
     return () => clearTimeout(timer);
   }, [timeoutMs]);
