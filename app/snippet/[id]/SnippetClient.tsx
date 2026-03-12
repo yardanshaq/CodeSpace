@@ -129,10 +129,10 @@ const roleColor = (role: string) =>
 export default function SnippetClient({ id, initialData }: { id: string; initialData?: Snippet | null }) {
   const router = useRouter();
 
-  const [snippet, setSnippet]             = useState<Snippet | null>(initialData ?? null);
-  const [loading, setLoading]             = useState(!initialData);
+  const [snippet, setSnippet]             = useState<Snippet | null>(null);
+  const [loading, setLoading]             = useState(true);
   const [copied, setCopied]               = useState(false);
-  const [attachments, setAttachments]     = useState<GlobalFile[]>(initialData?.attachments ?? []);
+  const [attachments, setAttachments]     = useState<GlobalFile[]>([]);
 
   // Like state
   const [likeCount, setLikeCount]         = useState(0);

@@ -8,6 +8,7 @@ import PageLoader from "@/components/PageLoader";
 interface Admin {
   id: string;
   username: string;
+  email: string | null;
   role: "SUPERADMIN" | "ADMIN" | "MEMBER";
   createdAt: string;
   lastLoginAt: string | null;
@@ -27,6 +28,8 @@ export default function UsersPage() {
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState<Admin["role"]>("ADMIN");
   const [showPass, setShowPass] = useState(false);
   const [formError, setFormError] = useState("");
   const [formSuccess, setFormSuccess] = useState("");
@@ -46,6 +49,11 @@ export default function UsersPage() {
     }
   }, []);
 
+  // The first superadmin (oldest createdAt among SUPERADMIN role) — immutable
+  const firstSuperadminId = admins
+    .filter(a => a.role === "SUPERADMIN")
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())[0]?.id ?? null;
+
   useEffect(() => {
     fetchAdmins(false);
     pollRef.current = setInterval(() => fetchAdmins(true), 15000);
@@ -58,7 +66,7 @@ export default function UsersPage() {
   };
 
   const openEdit = (a: Admin) => {
-    setSelected(a); setUsername(a.username); setPassword(""); setFormError(""); setFormSuccess(""); setShowPass(false);
+    setSelected(a); setUsername(a.username); setPassword(""); setEmail(a.email ?? ""); setRole(a.role); setFormError(""); setFormSuccess(""); setShowPass(false);
     setModal("edit");
   };
 
@@ -99,6 +107,8 @@ export default function UsersPage() {
       body: JSON.stringify({
         username: username !== selected.username ? username : undefined,
         password: password || undefined,
+        email: email !== (selected.email ?? "") ? (email || null) : undefined,
+        role: role !== selected.role ? role : undefined,
       }),
     });
     const data = await res.json();
@@ -246,7 +256,7 @@ export default function UsersPage() {
                     )}
                   </div>
                   <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                    <button className="btn btn-teal" onClick={() => openEdit(a)} style={{ padding: "6px 14px", fontSize: 11 }}>
+                    <button className="btn btn-teal" onClick={() => openEdit(a)} style={{ padding: "6px 14px", fontSize: 11 }} >
                       ✎ EDIT
                     </button>
                     {a.role !== "SUPERADMIN" && (
@@ -321,11 +331,32 @@ export default function UsersPage() {
           <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
             <div className="modal-header"><span className="modal-title">EDIT — {selected.username}</span></div>
             <div className="modal-body">
-              {formError && <div className="alert alert-error">{formError}</div>}
+              {formError   && <div className="alert alert-error">{formError}</div>}
               {formSuccess && <div className="alert alert-success">{formSuccess}</div>}
-              <label style={labelStyle}>New Username</label>
+
+              <label style={labelStyle}>Username</label>
               <input className="input-field" placeholder={selected.username} value={username}
                 onChange={e => setUsername(e.target.value)} autoFocus />
+
+              <label style={labelStyle}>
+                Email <span style={{ color: "var(--text-faint)", fontSize: 11 }}>(for password recovery)</span>
+              </label>
+              <input className="input-field" type="email" placeholder="user@example.com" value={email}
+                onChange={e => setEmail(e.target.value)} />
+
+              <label style={labelStyle}>Role</label>
+              <select className="input-field" value={role} onChange={e => setRole(e.target.value as Admin["role"])}
+                disabled={selected.id === firstSuperadminId}>
+                <option value="MEMBER">MEMBER</option>
+                <option value="ADMIN">ADMIN</option>
+                <option value="SUPERADMIN">SUPERADMIN</option>
+              </select>
+              {selected.id === firstSuperadminId && (
+                <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-faint)", marginTop: -4 }}>
+                  The original superadmin role cannot be changed
+                </div>
+              )}
+
               <label style={labelStyle}>
                 New Password <span style={{ color: "var(--text-faint)", fontSize: 11 }}>(leave blank to keep)</span>
               </label>

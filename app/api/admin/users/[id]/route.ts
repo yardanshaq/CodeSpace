@@ -16,16 +16,20 @@ export async function PUT(
 
     const target = await prisma.admin.findUnique({ where: { id: params.id } });
     if (!target) {
-      return NextResponse.json({ error: "Admin not found" }, { status: 404 });
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // Cannot edit another SUPERADMIN
-    if (target.role === "SUPERADMIN" && target.id !== session.id) {
-      return NextResponse.json({ error: "Cannot edit another superadmin" }, { status: 403 });
+    // The first superadmin (oldest by createdAt) is immutable — cannot be edited by anyone
+    const firstSuperadmin = await prisma.admin.findFirst({
+      where: { role: "SUPERADMIN" },
+      orderBy: { createdAt: "asc" },
+    });
+    if (firstSuperadmin && target.id === firstSuperadmin.id && target.id !== session.id) {
+      return NextResponse.json({ error: "The original superadmin account cannot be modified" }, { status: 403 });
     }
 
-    const { username, password } = await req.json();
-    const updateData: Record<string, string> = {};
+    const { username, password, email, role } = await req.json();
+    const updateData: Record<string, unknown> = {};
 
     if (username && username !== target.username) {
       if (username.length < 3) {
@@ -45,6 +49,34 @@ export async function PUT(
       updateData.password = await bcrypt.hash(password, 12);
     }
 
+    if (email !== undefined) {
+      if (email !== null && email !== "") {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+          return NextResponse.json({ error: "Invalid email format" }, { status: 400 });
+        }
+        const existing = await prisma.admin.findFirst({ where: { email, NOT: { id: params.id } } });
+        if (existing) {
+          return NextResponse.json({ error: "Email already in use by another account" }, { status: 409 });
+        }
+        updateData.email = email;
+      } else {
+        updateData.email = null;
+      }
+    }
+
+    if (role && role !== target.role) {
+      // Cannot demote or change the first superadmin's role
+      if (firstSuperadmin && target.id === firstSuperadmin.id) {
+        return NextResponse.json({ error: "Cannot change the original superadmin role" }, { status: 403 });
+      }
+      const validRoles = ["ADMIN", "MEMBER", "SUPERADMIN"];
+      if (!validRoles.includes(role)) {
+        return NextResponse.json({ error: "Invalid role" }, { status: 400 });
+      }
+      updateData.role = role;
+    }
+
     if (Object.keys(updateData).length === 0) {
       return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
     }
@@ -52,7 +84,7 @@ export async function PUT(
     const updated = await prisma.admin.update({
       where: { id: params.id },
       data: updateData,
-      select: { id: true, username: true, role: true, createdAt: true, _count: { select: { snippets: true } } },
+      select: { id: true, username: true, email: true, role: true, createdAt: true, _count: { select: { snippets: true } } },
     });
 
     return NextResponse.json(updated);
