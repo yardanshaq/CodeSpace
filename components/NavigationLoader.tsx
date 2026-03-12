@@ -4,22 +4,20 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import LoaderContent from "@/components/LoaderContent";
 
-// ── Singleton state ─────────────────────────────────────────
-let _setShowing: ((v: boolean) => void) | null = null;
-let _refCount = 0; // how many "holders" want the loader visible
+let _setVisible: ((v: boolean) => void) | null = null;
+let _held = false; // PageLoader is holding the loader open
 
-function show() {
-  _refCount++;
-  _setShowing?.(true);
+export function startNavigationLoader() { _setVisible?.(true); }
+
+export function stopNavigationLoader() {
+  _held = false;
+  _setVisible?.(false);
 }
 
-function hide() {
-  _refCount = Math.max(0, _refCount - 1);
-  if (_refCount === 0) _setShowing?.(false);
+// Called by PageLoader on mount — keeps loader visible until PageLoader is ready
+export function holdNavigationLoader() {
+  _held = true;
 }
-
-export function startNavigationLoader() { show(); }
-export function stopNavigationLoader()  { hide(); }
 
 export function useNavigate() {
   const router = useRouter();
@@ -29,62 +27,28 @@ export function useNavigate() {
   };
 }
 
-// ── PageLoader hook — used inside page components ────────────
-// Call this once at the top of a page component that has its own
-// loading state, so the singleton loader is hidden when ready.
-export function usePageLoader(loading: boolean) {
-  const held = useRef(false);
-  useEffect(() => {
-    if (loading && !held.current) {
-      held.current = true;
-      show();
-    }
-    if (!loading && held.current) {
-      held.current = false;
-      hide();
-    }
-    return () => {
-      if (held.current) { held.current = false; hide(); }
-    };
-  }, [loading]);
-}
-
-// ── The one global loader in the DOM ────────────────────────
 export default function NavigationLoader() {
-  const [showing, setShowing] = useState(false);
-  const [timedOut, setTimedOut] = useState(false);
+  const [visible, setVisible] = useState(false);
   const pathname = usePathname();
   const prevPath = useRef(pathname);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    _setShowing = (v) => {
-      setShowing(v);
-      if (v) {
-        setTimedOut(false);
-        if (timerRef.current) clearTimeout(timerRef.current);
-        timerRef.current = setTimeout(() => setTimedOut(true), 15000);
-      } else {
-        if (timerRef.current) clearTimeout(timerRef.current);
-      }
-    };
-    return () => { _setShowing = null; };
+    _setVisible = setVisible;
+    return () => { _setVisible = null; };
   }, []);
 
-  // Auto-hide when pathname changes (fallback for pages without PageLoader)
   useEffect(() => {
     if (pathname !== prevPath.current) {
       prevPath.current = pathname;
-      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-      hideTimerRef.current = setTimeout(() => {
-        _refCount = 0;
-        _setShowing?.(false);
+      // Only auto-hide if no PageLoader is holding it
+      const t = setTimeout(() => {
+        if (!_held) setVisible(false);
       }, 80);
+      return () => clearTimeout(t);
     }
   }, [pathname]);
 
-  if (!showing) return null;
+  if (!visible) return null;
 
   return (
     <div style={{
@@ -93,7 +57,7 @@ export default function NavigationLoader() {
       display: "flex", flexDirection: "column",
       alignItems: "center", justifyContent: "center", gap: 20,
     }}>
-      <LoaderContent timedOut={timedOut} />
+      <LoaderContent />
     </div>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { useNavigate } from "@/components/NavigationLoader";
 import Navbar from "@/components/Navbar";
 import PageLoader from "@/components/PageLoader";
 
@@ -37,6 +38,7 @@ function filterByPeriod(list: Snippet[], period: Period): Snippet[] {
 
 export default function TrendingPage() {
   const router = useRouter();
+  const navigate = useNavigate();
   // Cache semua data di sini — fetch cuma sekali, filter di client
   const cacheRef                    = useRef<Snippet[] | null>(null);
   const [allSnippets, setAllSnippets] = useState<Snippet[]>([]);
@@ -147,7 +149,7 @@ export default function TrendingPage() {
                   return (
                     <div
                       key={s.id}
-                      onClick={() => router.push(`/code?v=${s.filename}`)}
+                      onClick={() => navigate(`/code?v=${s.filename}`)}
                       role="article"
                       aria-label={`#${i+1} trending: ${s.title}`}
                       style={{
@@ -210,7 +212,7 @@ export default function TrendingPage() {
                 {rest.map((s, i) => (
                   <div
                     key={s.id}
-                    onClick={() => router.push(`/code?v=${s.filename}`)}
+                    onClick={() => navigate(`/code?v=${s.filename}`)}
                     role="listitem"
                     style={{
                       display: "flex", alignItems: "center", gap: 16, padding: "14px 20px",

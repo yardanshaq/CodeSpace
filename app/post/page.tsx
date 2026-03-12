@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useNavigate } from "@/components/NavigationLoader";
 import Navbar from "@/components/Navbar";
 import PageLoader from "@/components/PageLoader";
 import { getCachedUser, setCachedUser } from "@/lib/authCache";
@@ -76,6 +77,7 @@ const CATEGORIES = ["AI", "Anime", "Converter", "Downloader", "Generator", "Othe
 
 export default function PostPage() {
   const router = useRouter();
+  const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(() => {
     const c = getCachedUser();
     return c ? { id: (c as User).id ?? "", username: c.username, role: c.role } : null;
@@ -132,7 +134,6 @@ export default function PostPage() {
 
   const outputRef = useRef<HTMLDivElement | null>(null);
   const snippetRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  const listRef = useRef<HTMLDivElement | null>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
 
   useEffect(() => {
@@ -199,36 +200,6 @@ export default function PostPage() {
     }
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [user, fetchSnippets]);
-
-  // ── Scroll fade-in untuk snippet cards ───────────────────────────────────
-  useEffect(() => {
-    if (!listRef.current || snippets.length === 0) return;
-    const cards = Array.from(
-      listRef.current.querySelectorAll<HTMLElement>(".admin-snippet-card")
-    );
-
-    // Fallback: tampilkan semua card jika observer tidak pernah fire
-    const fallback = setTimeout(() => {
-      cards.forEach(c => c.classList.add("card-visible"));
-    }, 1200);
-
-    const obs = new IntersectionObserver(
-      (entries) => {
-        entries.forEach(entry => {
-          if (entry.isIntersecting) {
-            const el  = entry.target as HTMLElement;
-            const idx = cards.indexOf(el);
-            setTimeout(() => el.classList.add("card-visible"), idx * 50);
-            obs.unobserve(el);
-          }
-        });
-      },
-      { threshold: 0.05, rootMargin: "0px 0px -20px 0px" }
-    );
-
-    cards.forEach(card => obs.observe(card));
-    return () => { obs.disconnect(); clearTimeout(fallback); };
-  }, [snippets]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -357,14 +328,20 @@ export default function PostPage() {
     if (res.ok) {
       setFormSuccess("Snippet updated!");
       const savedId = editSnippet!.id;
+      // Capture scroll position BEFORE closing modal
       const scrollY = window.scrollY;
       setSnippets(prev => prev.map(s => s.id === savedId ? { ...s, title: form.title, code: form.code, category: form.category, isPublic: form.isPublic, updatedAt: new Date().toISOString() } : s));
       setTimeout(() => {
         setShowEditModal(false); setFormSuccess(""); setEditSnippet(null);
+        // Restore scroll position immediately after modal closes
         window.scrollTo({ top: scrollY, behavior: "instant" as ScrollBehavior });
+        // Then smooth scroll to the card
         setTimeout(() => {
           const el = snippetRefs.current.get(savedId);
-          if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+          if (el) {
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+          // Silent fetch — won't reset scroll
           fetchSnippets(true);
         }, 80);
       }, 400);
@@ -472,6 +449,7 @@ export default function PostPage() {
   };
 
   const handleRun = async (s: Snippet) => {
+    // If running the snippet currently being edited, use the live form code
     const effectiveSnippet = (editSnippet && editSnippet.id === s.id)
       ? { ...s, code: form.code }
       : s;
@@ -594,7 +572,7 @@ export default function PostPage() {
         ) : snippets.length === 0 ? (
           <div className="vault-empty">NO SNIPPETS YET. CLICK + TO POST YOUR FIRST SNIPPET.</div>
         ) : (
-          <div className="snippets-list" ref={listRef}>
+          <div className="snippets-list">
             {snippets.map((s) => {
               const catStyle = getCategoryStyle(s.category);
               return (
@@ -605,6 +583,7 @@ export default function PostPage() {
                       <div className="admin-snippet-meta">
                         <span>{s.filename}</span>
                         <span>·</span>
+                        {/* Colored category badge */}
                         <span style={{
                           display: "inline-block",
                           padding: "2px 8px", borderRadius: 4,
@@ -615,12 +594,14 @@ export default function PostPage() {
                           {s.category.toUpperCase()}
                         </span>
                         <span>·</span>
+                        {/* views */}
                         <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                             <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
                           </svg>
                           {s.views}
                         </span>
+                        {/* likes */}
                         <span>·</span>
                         <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -628,6 +609,7 @@ export default function PostPage() {
                           </svg>
                           {s.likeCount ?? 0}
                         </span>
+                        {/* comments */}
                         {(s.commentCount ?? 0) > 0 && (
                           <>
                             <span>·</span>
@@ -652,7 +634,7 @@ export default function PostPage() {
                   <div className="admin-snippet-actions">
                     <button className="btn btn-yellow" onClick={() => handleRun(s)} aria-label={`Run ${s.title}`}>RUN</button>
                     <button className="btn btn-teal"   onClick={() => openEdit(s)} aria-label={`Edit ${s.title}`}>EDIT</button>
-                    <button className="btn btn-white"  onClick={() => router.push(`/code?v=${s.filename}`)} aria-label={`View ${s.title}`}>VIEW</button>
+                    <button className="btn btn-white"  onClick={() => navigate(`/code?v=${s.filename}`)} aria-label={`View ${s.title}`}>VIEW</button>
                     <button className="btn btn-red"    onClick={() => handleDeleteSnippet(s.id)} aria-label={`Delete ${s.title}`}>DELETE</button>
                   </div>
                 </div>
@@ -684,6 +666,7 @@ export default function PostPage() {
                 )}
               </div>
               <textarea className="textarea-field" placeholder="Paste your code here..." value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} />
+              {/* File attachments */}
               <div style={{ borderTop: "1.5px solid var(--divider)", paddingTop: 12 }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
                   <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 6 }}>
@@ -779,6 +762,7 @@ export default function PostPage() {
                 )}
               </div>
               <textarea className="textarea-field" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} />
+              {/* File attachments */}
               <div style={{ borderTop: "1.5px solid var(--divider)", paddingTop: 12 }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: fileUploading ? 8 : 10 }}>
                   <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 6 }}>
@@ -967,17 +951,6 @@ export default function PostPage() {
         @keyframes spin   { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         @keyframes slideUp { from { transform: translateY(12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-        @keyframes cardFadeUp {
-          from { opacity: 0; transform: translateY(18px); }
-          to   { opacity: 1; transform: translateY(0);    }
-        }
-        .admin-snippet-card {
-          opacity: 0;
-          transform: translateY(18px);
-        }
-        .admin-snippet-card.card-visible {
-          animation: cardFadeUp 0.38s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
-        }
       `}</style>
     </>
   );

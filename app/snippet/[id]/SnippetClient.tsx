@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
-import PageLoader from "@/components/PageLoader";
+import { startNavigationLoader, stopNavigationLoader } from "@/components/NavigationLoader";
 
 interface GlobalFile {
   id: string;
@@ -131,6 +131,15 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
 
   const [snippet, setSnippet]             = useState<Snippet | null>(null);
   const [loading, setLoading]             = useState(true);
+
+  // Sync loading state with the singleton NavigationLoader
+  useEffect(() => {
+    startNavigationLoader();
+    return () => stopNavigationLoader();
+  }, []);
+  useEffect(() => {
+    if (!loading) stopNavigationLoader();
+  }, [loading]);
   const [copied, setCopied]               = useState(false);
   const [attachments, setAttachments]     = useState<GlobalFile[]>([]);
 
@@ -522,7 +531,7 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
   const formatTime = (d: string) =>
     new Date(d).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
 
-  if (loading) return <PageLoader />;
+  if (loading) return null;
   if (!snippet) return (<><Navbar /><main className="main"><div className="loading">SNIPPET NOT FOUND.</div></main></>);
 
   const highlightedLines = highlight(snippet.code).split("\n");
