@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import PageLoader from "@/components/PageLoader";
 import Navbar from "@/components/Navbar";
 
 interface GlobalFile {
@@ -522,7 +523,7 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
   const formatTime = (d: string) =>
     new Date(d).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
 
-  if (loading) return null;
+  if (loading) return <PageLoader />;
   if (!snippet) return (<><Navbar /><main className="main"><div className="loading">SNIPPET NOT FOUND.</div></main></>);
 
   const highlightedLines = highlight(snippet.code).split("\n");
