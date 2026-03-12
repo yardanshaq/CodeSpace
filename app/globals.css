@@ -805,12 +805,3 @@ textarea:focus-visible {
 [data-theme="dark"] .cs-loader-logo {
   filter: invert(1);
 }
-
-/* ── Instant navigation overlay (no React delay) ─────────── */
-body.nav-loading::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  background: var(--bg);
-  z-index: 8999;
-}

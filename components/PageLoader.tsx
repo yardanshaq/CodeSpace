@@ -1,14 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { stopNavigationLoader } from "@/components/NavigationLoader";
 import LoaderContent from "@/components/LoaderContent";
 
 export default function PageLoader({ timeoutMs = 15000 }: { timeoutMs?: number }) {
   const [timedOut, setTimedOut] = useState(false);
 
   useEffect(() => {
-    // Remove the instant overlay — PageLoader is now handling visuals
-    document.body.classList.remove("nav-loading");
+    stopNavigationLoader(); // remove the DOM-injected overlay
     const timer = setTimeout(() => setTimedOut(true), timeoutMs);
     return () => clearTimeout(timer);
   }, [timeoutMs]);
