@@ -1,23 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { holdNavigationLoader, stopNavigationLoader } from "@/components/NavigationLoader";
+import { stopNavigationLoader } from "@/components/NavigationLoader";
 import LoaderContent from "@/components/LoaderContent";
 
-interface PageLoaderProps {
-  timeoutMs?: number;
-  label?: string;
-}
-
-export default function PageLoader({ timeoutMs = 15000 }: PageLoaderProps) {
+export default function PageLoader({ timeoutMs = 15000 }: { timeoutMs?: number; label?: string }) {
   const [timedOut, setTimedOut] = useState(false);
 
   useEffect(() => {
-    // Grab the NavigationLoader so it doesn't vanish before we render
-    holdNavigationLoader();
-    // Then immediately take over (stop nav loader, show our own)
+    // Stop NavigationLoader immediately — we take over the same visual
     stopNavigationLoader();
-
     const timer = setTimeout(() => setTimedOut(true), timeoutMs);
     return () => {
       clearTimeout(timer);

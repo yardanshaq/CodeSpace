@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
-import { startNavigationLoader, stopNavigationLoader } from "@/components/NavigationLoader";
 
 interface GlobalFile {
   id: string;
@@ -132,14 +131,6 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
   const [snippet, setSnippet]             = useState<Snippet | null>(null);
   const [loading, setLoading]             = useState(true);
 
-  // Sync loading state with the singleton NavigationLoader
-  useEffect(() => {
-    startNavigationLoader();
-    return () => stopNavigationLoader();
-  }, []);
-  useEffect(() => {
-    if (!loading) stopNavigationLoader();
-  }, [loading]);
   const [copied, setCopied]               = useState(false);
   const [attachments, setAttachments]     = useState<GlobalFile[]>([]);
 

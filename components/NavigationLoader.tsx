@@ -5,19 +5,9 @@ import { useRouter, usePathname } from "next/navigation";
 import LoaderContent from "@/components/LoaderContent";
 
 let _setVisible: ((v: boolean) => void) | null = null;
-let _held = false; // PageLoader is holding the loader open
 
 export function startNavigationLoader() { _setVisible?.(true); }
-
-export function stopNavigationLoader() {
-  _held = false;
-  _setVisible?.(false);
-}
-
-// Called by PageLoader on mount — keeps loader visible until PageLoader is ready
-export function holdNavigationLoader() {
-  _held = true;
-}
+export function stopNavigationLoader()  { _setVisible?.(false); }
 
 export function useNavigate() {
   const router = useRouter();
@@ -40,10 +30,8 @@ export default function NavigationLoader() {
   useEffect(() => {
     if (pathname !== prevPath.current) {
       prevPath.current = pathname;
-      // Only auto-hide if no PageLoader is holding it
-      const t = setTimeout(() => {
-        if (!_held) setVisible(false);
-      }, 80);
+      // Auto-hide after 80ms (PageLoader will call stopNavigationLoader before this)
+      const t = setTimeout(() => setVisible(false), 80);
       return () => clearTimeout(t);
     }
   }, [pathname]);
