@@ -497,7 +497,7 @@ export default function PostPage() {
   const formatDate = (d: string) =>
     new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 
-  if (loading) return <PageLoader label="loading dashboard" />;
+  if (loading) return <PageLoader />;
   if (!user)   return <PageLoader />;
 
   return (

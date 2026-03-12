@@ -83,7 +83,7 @@ export default function SettingsPage() {
     setSaving(false);
   };
 
-  if (loading) return <PageLoader label="loading settings" />;
+  if (loading) return <PageLoader />;
 
   return (
     <>

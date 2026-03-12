@@ -151,7 +151,7 @@ export default function UsersPage() {
     return formatDate(d);
   };
 
-  if (loading) return <PageLoader label="loading users" />;
+  if (loading) return <PageLoader />;
   if (authError) return (<><Navbar /><main className="main"><div className="loading">ACCESS DENIED. SUPERADMIN ONLY.</div></main></>);
 
   const roleColor = (role: Admin["role"]) =>
