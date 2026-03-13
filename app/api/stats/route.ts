@@ -26,28 +26,15 @@ async function fetchRegionFromIP(): Promise<string> {
   if (process.env.FLY_REGION)     { cachedRegion = process.env.FLY_REGION;     return cachedRegion; }
   if (process.env.SERVER_REGION)  { cachedRegion = process.env.SERVER_REGION;  return cachedRegion; }
 
-  const apis: Array<() => Promise<string | null>> = [
-    async () => {
-      const token = process.env.IPINFO_TOKEN ? `?token=${process.env.IPINFO_TOKEN}` : "";
-      const r = await fetch(`https://ipinfo.io/json${token}`, { signal: AbortSignal.timeout(3000) });
-      const d = await r.json();
-      if (d.city && d.country) return `${d.city}, ${d.country}`;
-      return null;
-    },
-    async () => {
-      const r = await fetch("http://ip-api.com/json/", { signal: AbortSignal.timeout(3000) });
-      const d = await r.json();
-      if (d.status === "success" && d.city && d.country) return `${d.city}, ${d.country}`;
-      return null;
-    },
-  ];
-
-  for (const fn of apis) {
-    try {
-      const result = await fn();
-      if (result) { cachedRegion = result; return cachedRegion; }
-    } catch { /* coba API berikutnya */ }
-  }
+  try {
+    const FIELDS = "status,message,country,countryCode,regionName,city,timezone,isp,org,query";
+    const r = await fetch(`http://ip-api.com/json/?fields=${FIELDS}`, { signal: AbortSignal.timeout(4000) });
+    const d = await r.json();
+    if (d.status === "success" && d.city && d.regionName && d.country) {
+      cachedRegion = `${d.city}, ${d.regionName}, ${d.country}`;
+      return cachedRegion;
+    }
+  } catch { /* fallback */ }
 
   cachedRegion = `${os.hostname()} (${process.platform})`;
   return cachedRegion;
