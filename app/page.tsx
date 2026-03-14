@@ -241,18 +241,26 @@ export default function HomePage() {
   useEffect(() => {
     if (!gridRef.current) return;
     const cards = gridRef.current.querySelectorAll<HTMLElement>(".snippet-card");
+    const timers = new Map<HTMLElement, ReturnType<typeof setTimeout>>();
     const obs = new IntersectionObserver((entries) => {
       entries.forEach(entry => {
+        const el = entry.target as HTMLElement;
+        const idx = Array.from(cards).indexOf(el);
         if (entry.isIntersecting) {
-          const el = entry.target as HTMLElement;
-          const idx = Array.from(cards).indexOf(el);
-          setTimeout(() => el.classList.add("visible"), (idx % 3) * 60);
-          obs.unobserve(el);
+          // Card masuk viewport — fade in, stagger di-cap supaya tidak lambat saat scroll cepat
+          const delay = Math.min(idx % 5 * 30, 80);
+          const t = setTimeout(() => el.classList.add("visible"), delay);
+          timers.set(el, t);
+        } else {
+          // Card keluar viewport — reset supaya bisa fade in lagi
+          clearTimeout(timers.get(el));
+          timers.delete(el);
+          el.classList.remove("visible");
         }
       });
-    }, { threshold: 0.08 });
+    }, { threshold: 0.06 });
     cards.forEach((card: HTMLElement) => obs.observe(card));
-    return () => obs.disconnect();
+    return () => { obs.disconnect(); timers.forEach(t => clearTimeout(t)); };
   }, [snippets]);
 
   const toggleAuthor   = (a: string) =>

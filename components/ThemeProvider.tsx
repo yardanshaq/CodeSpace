@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, useCallback } from "react";
 
 type Theme = "light" | "dark";
 
@@ -32,12 +32,22 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setTheme(initial);
   }, []);
 
-  const toggle = () => {
+  const toggle = useCallback(() => {
     const next: Theme = theme === "light" ? "dark" : "light";
+    const html = document.documentElement;
+
+    // Add transitioning class — triggers smooth CSS transition on all elements
+    html.classList.add("theme-transitioning");
+
+    // Apply new theme
     setTheme(next);
-    document.documentElement.setAttribute("data-theme", next);
+    html.setAttribute("data-theme", next);
     localStorage.setItem("theme", next);
-  };
+
+    // Remove transitioning class after animation completes
+    const t = setTimeout(() => html.classList.remove("theme-transitioning"), 400);
+    return () => clearTimeout(t);
+  }, [theme]);
 
   // Tidak pernah return null — mencegah blank putih di mobile
   return (

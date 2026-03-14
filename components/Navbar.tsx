@@ -15,6 +15,8 @@ export default function Navbar() {
   const { theme, toggle } = useTheme();
   const router   = useRouter();
   const pathname = usePathname();
+  const [iconSpin, setIconSpin] = useState(false);
+  const [activeBtnId, setActiveBtnId] = useState<string | null>(null);
 
   // SSR-safe: selalu null dulu agar server & client render HTML yang sama.
   // getCachedUser() tidak boleh dipakai sebagai initial state karena
@@ -81,12 +83,11 @@ export default function Navbar() {
     router.refresh();
   };
 
-  const isDark      = theme === "dark";
   const roleColor   = user?.role === "SUPERADMIN" ? "#f5c542" : user?.role === "ADMIN" ? "#4ecdc4" : "#aaaaaa";
   // Gunakan CSS variables — nilainya langsung benar dari frame pertama
   // karena blocking script di layout.tsx sudah set data-theme sebelum render
   const borderCol   = "var(--navbar-border)";
-  const shadow0     = "#000";
+  const shadow0     = "var(--border-color)";
   const glassBg     = "var(--navbar-bg)";
   const dropBg      = "var(--navbar-drop-bg)";
   const hoverBg     = "var(--navbar-hover-bg)";
@@ -142,8 +143,10 @@ export default function Navbar() {
             <div className="nav-socials-group" style={{ display: "flex", gap: 1 }}>
               <a href="https://instagram.com/shaqsyr" target="_blank" rel="noopener noreferrer" aria-label="Instagram"
                 style={{ width: 32, height: 32, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", transition: "all .15s", border: "2px solid transparent", background: "transparent" }}
-                onMouseOver={e => { e.currentTarget.style.background = hoverBg; e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.border = `2px solid ${borderCol}`; }}
-                onMouseOut={e  => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.border = "2px solid transparent"; }}
+                onMouseOver={e => { e.currentTarget.style.background = hoverBg; e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.border = `2px solid ${borderCol}`; e.currentTarget.style.transform = "scale(1.15)"; }}
+                onMouseOut={e  => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.border = "2px solid transparent"; e.currentTarget.style.transform = "scale(1)"; }}
+                onMouseDown={e => { e.currentTarget.style.transform = "scale(0.88)"; }}
+                onMouseUp={e   => { e.currentTarget.style.transform = "scale(1.1)"; setTimeout(() => { (e.currentTarget as HTMLElement).style.transform = "scale(1)"; }, 150); }}
               >
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
@@ -153,8 +156,10 @@ export default function Navbar() {
               </a>
               <a href="https://github.com/yardanshaq" target="_blank" rel="noopener noreferrer" aria-label="GitHub"
                 style={{ width: 32, height: 32, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", transition: "all .15s", border: "2px solid transparent", background: "transparent" }}
-                onMouseOver={e => { e.currentTarget.style.background = hoverBg; e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.border = `2px solid ${borderCol}`; }}
-                onMouseOut={e  => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.border = "2px solid transparent"; }}
+                onMouseOver={e => { e.currentTarget.style.background = hoverBg; e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.border = `2px solid ${borderCol}`; e.currentTarget.style.transform = "scale(1.15)"; }}
+                onMouseOut={e  => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.border = "2px solid transparent"; e.currentTarget.style.transform = "scale(1)"; }}
+                onMouseDown={e => { e.currentTarget.style.transform = "scale(0.88)"; }}
+                onMouseUp={e   => { e.currentTarget.style.transform = "scale(1.1)"; setTimeout(() => { (e.currentTarget as HTMLElement).style.transform = "scale(1)"; }, 150); }}
               >
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/>
@@ -166,24 +171,39 @@ export default function Navbar() {
             <div className="nav-divider" style={{ width: 1, height: 18, background: "var(--navbar-divider)", margin: "0 4px" }} />
 
             {/* Theme */}
-            <button onClick={toggle} aria-label={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
+            <button
+              onClick={() => {
+                setIconSpin(true);
+                toggle();
+                setTimeout(() => setIconSpin(false), 500);
+              }}
+              aria-label={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
               style={{ width: 32, height: 32, borderRadius: 8, flexShrink: 0, border: "2px solid transparent", background: "transparent", color: "var(--text-muted)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all .15s" }}
-              onMouseOver={e => { e.currentTarget.style.background = hoverBg; e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.border = `2px solid ${borderCol}`; }}
-              onMouseOut={e  => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.border = "2px solid transparent"; }}
+              onMouseOver={e => { e.currentTarget.style.background = hoverBg; e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.border = `2px solid ${borderCol}`; e.currentTarget.style.transform = "scale(1.15)"; }}
+              onMouseOut={e  => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.border = "2px solid transparent"; e.currentTarget.style.transform = "scale(1)"; }}
+              onMouseDown={e => { e.currentTarget.style.transform = "scale(0.88)"; }}
+              onMouseUp={e   => { e.currentTarget.style.transform = "scale(1.15)"; }}
             >
-              {theme === "light" ? (
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-                </svg>
-              ) : (
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="5"/>
-                  <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
-                  <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
-                  <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
-                  <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
-                </svg>
-              )}
+              <span style={{
+                display: "inline-flex",
+                transition: "transform 0.4s cubic-bezier(0.34,1.56,0.64,1), opacity 0.2s ease",
+                transform: iconSpin ? "rotate(180deg) scale(1.3)" : "rotate(0deg) scale(1)",
+                opacity: iconSpin ? 0.7 : 1,
+              }}>
+                {theme === "light" ? (
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                  </svg>
+                ) : (
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="5"/>
+                    <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                    <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                  </svg>
+                )}
+              </span>
             </button>
 
             {/* AUTH */}
@@ -197,8 +217,10 @@ export default function Navbar() {
                   borderRadius: 999, cursor: "pointer", transition: "all .15s",
                   boxShadow: dropdownOpen ? `2px 2px 0 ${shadow0}` : "none",
                 }}
-                  onMouseOver={e => { e.currentTarget.style.background = hoverBg; e.currentTarget.style.borderColor = roleColor; e.currentTarget.style.boxShadow = `2px 2px 0 ${shadow0}`; }}
-                  onMouseOut={e  => { if (!dropdownOpen) { e.currentTarget.style.background = "transparent"; e.currentTarget.style.borderColor = "transparent"; e.currentTarget.style.boxShadow = "none"; } }}
+                  onMouseOver={e => { e.currentTarget.style.background = hoverBg; e.currentTarget.style.borderColor = roleColor; e.currentTarget.style.boxShadow = `2px 2px 0 ${shadow0}`; e.currentTarget.style.transform = "scale(1.03)"; }}
+                  onMouseOut={e  => { if (!dropdownOpen) { e.currentTarget.style.background = "transparent"; e.currentTarget.style.borderColor = "transparent"; e.currentTarget.style.boxShadow = "none"; } e.currentTarget.style.transform = "scale(1)"; }}
+                  onMouseDown={e => { e.currentTarget.style.transform = "scale(0.95)"; }}
+                  onMouseUp={e   => { e.currentTarget.style.transform = "scale(1.03)"; }}
                 >
                   <div style={{
                     width: 26, height: 26, borderRadius: "50%", background: roleColor,
@@ -289,8 +311,10 @@ export default function Navbar() {
                 boxShadow: `2px 2px 0 ${shadow0}`,
                 transition: "all .15s", whiteSpace: "nowrap",
               }}
-                onMouseOver={e => { e.currentTarget.style.transform = "translate(-1px,-1px)"; e.currentTarget.style.boxShadow = `3px 3px 0 ${shadow0}`; }}
+                onMouseOver={e => { e.currentTarget.style.transform = "translate(-1px,-1px) scale(1.03)"; e.currentTarget.style.boxShadow = `3px 3px 0 ${shadow0}`; }}
                 onMouseOut={e  => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = `2px 2px 0 ${shadow0}`; }}
+                onMouseDown={e => { e.currentTarget.style.transform = "translate(2px,2px) scale(0.96)"; e.currentTarget.style.boxShadow = "none"; }}
+                onMouseUp={e   => { e.currentTarget.style.transform = "translate(-1px,-1px) scale(1.03)"; e.currentTarget.style.boxShadow = `3px 3px 0 ${shadow0}`; }}
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>

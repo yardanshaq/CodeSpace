@@ -76,6 +76,46 @@ export default function RootLayout({
           <NavigationLoader />
           {children}
         </ThemeProvider>
+        <script dangerouslySetInnerHTML={{ __html: `
+(function () {
+  // Map: keyword dalam aria-label / class / text → animasi SVG
+  function getAnim(btn) {
+    const label = (btn.getAttribute('aria-label') || btn.textContent || btn.className || '').toLowerCase();
+    if (/delete|trash|remove/.test(label))          return 'shake';
+    if (/like|heart|love/.test(label))              return 'bounce';
+    if (/run|play|execute/.test(label))             return 'spin';
+    if (/edit|pencil|rename/.test(label))           return 'jiggle';
+    if (/copy|copied|duplicate/.test(label))        return 'pop';
+    if (/view|eye|preview/.test(label))             return 'ping';
+    if (/save|upload|send|submit|post|register|sign|login/.test(label)) return 'pop';
+    if (/download/.test(label))                     return 'bounce';
+    if (/refresh|reload|retry/.test(label))         return 'spin';
+    if (/dark|light|theme|mode/.test(label))        return 'spin';
+    return 'bounce'; // default
+  }
+
+  document.addEventListener('mousedown', function (e) {
+    var btn = e.target.closest('button, a[href]');
+    if (!btn) return;
+    if (!btn.querySelector('svg')) return;
+
+    var anim = getAnim(btn);
+    var cls  = 'svg-anim-' + anim;
+
+    // Remove existing anim classes first
+    ['bounce','shake','spin','pop','ping','jiggle'].forEach(function(a) {
+      btn.classList.remove('svg-anim-' + a);
+    });
+
+    // Force reflow so animation restarts even if same class
+    void btn.offsetWidth;
+    btn.classList.add(cls);
+
+    // Remove after animation finishes
+    setTimeout(function () { btn.classList.remove(cls); }, 550);
+  }, true);
+})();
+        ` }} />
       </body>
     </html>
   );

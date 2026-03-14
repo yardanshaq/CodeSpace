@@ -134,6 +134,7 @@ export default function PostPage() {
 
   const outputRef = useRef<HTMLDivElement | null>(null);
   const snippetRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const listRef = useRef<HTMLDivElement | null>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
 
   useEffect(() => {
@@ -251,6 +252,44 @@ export default function PostPage() {
     prevOutputLen.current = runOutput.length;
     if (delta > 0 && delta < 300) el.scrollTop = el.scrollHeight;
   }, [runOutput]);
+
+  // Fade-in cards saat muncul di viewport — re-trigger setiap scroll masuk/keluar
+  useEffect(() => {
+    if (!listRef.current) return;
+    const cards = listRef.current.querySelectorAll<HTMLElement>(".admin-snippet-card");
+    const timers = new Map<HTMLElement, ReturnType<typeof setTimeout>>();
+    // Set semua ke hidden dulu
+    cards.forEach(c => {
+      c.style.transition = "none";
+      c.style.opacity = "0";
+      c.style.transform = "translateY(14px)";
+    });
+    const obs = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        const el = entry.target as HTMLElement;
+        const idx = Array.from(cards).indexOf(el);
+        if (entry.isIntersecting) {
+          // Card masuk viewport — fade in, stagger kecil & di-cap supaya tidak lambat saat scroll cepat
+          const delay = Math.min(idx % 5 * 30, 80);
+          const t = setTimeout(() => {
+            el.style.transition = "opacity 0.25s ease, transform 0.25s ease";
+            el.style.opacity = "1";
+            el.style.transform = "translateY(0)";
+          }, delay);
+          timers.set(el, t);
+        } else {
+          // Card keluar viewport — reset
+          clearTimeout(timers.get(el));
+          timers.delete(el);
+          el.style.transition = "none";
+          el.style.opacity = "0";
+          el.style.transform = "translateY(14px)";
+        }
+      });
+    }, { threshold: 0.06 });
+    cards.forEach(c => obs.observe(c));
+    return () => { obs.disconnect(); timers.forEach(t => clearTimeout(t)); };
+  }, [snippets]);
 
   const isMember    = user?.role === "MEMBER";
   const isSuperAdmin = user?.role === "SUPERADMIN";
@@ -572,7 +611,7 @@ export default function PostPage() {
         ) : snippets.length === 0 ? (
           <div className="vault-empty">NO SNIPPETS YET. CLICK + TO POST YOUR FIRST SNIPPET.</div>
         ) : (
-          <div className="snippets-list">
+          <div className="snippets-list" ref={listRef}>
             {snippets.map((s) => {
               const catStyle = getCategoryStyle(s.category);
               return (
