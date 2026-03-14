@@ -78,20 +78,46 @@ export default function RootLayout({
         </ThemeProvider>
         <script dangerouslySetInnerHTML={{ __html: `
 (function () {
-  // Map: keyword dalam aria-label / class / text → animasi SVG
+  var ALL = ['eq','sort','funnel','plus','trash','play','eye','pencil','upload','arrowup','chat','spin','pop','bounce','users','trend'];
+
   function getAnim(btn) {
-    const label = (btn.getAttribute('aria-label') || btn.textContent || btn.className || '').toLowerCase();
-    if (/delete|trash|remove/.test(label))          return 'shake';
-    if (/like|heart|love/.test(label))              return 'bounce';
-    if (/run|play|execute/.test(label))             return 'spin';
-    if (/edit|pencil|rename/.test(label))           return 'jiggle';
-    if (/copy|copied|duplicate/.test(label))        return 'pop';
-    if (/view|eye|preview/.test(label))             return 'ping';
-    if (/save|upload|send|submit|post|register|sign|login/.test(label)) return 'pop';
-    if (/download/.test(label))                     return 'bounce';
-    if (/refresh|reload|retry/.test(label))         return 'spin';
-    if (/dark|light|theme|mode/.test(label))        return 'spin';
-    return 'bounce'; // default
+    var label = (btn.getAttribute('aria-label') || btn.getAttribute('title') || btn.textContent || '').toLowerCase().trim();
+    var svg   = btn.querySelector('svg');
+
+    // --- label-based detection (most reliable) ---
+    if (/filter by author/.test(label))                               return 'eq';
+    if (/sort/.test(label))                                           return 'sort';
+    if (/filter by category/.test(label))                             return 'funnel';
+    if (/create new snippet|post a snippet/.test(label))             return 'plus';
+    if (/delete|trash|remove/.test(label))                           return 'trash';
+    if (/run|play|execute/.test(label))                              return 'play';
+    if (/view|eye|preview/.test(label))                              return 'eye';
+    if (/edit|rename/.test(label))                                   return 'pencil';
+    if (/upload/.test(label))                                        return 'upload';
+    if (/scroll to top|back to top/.test(label))                     return 'arrowup';
+    if (/feedback|send feedback|chat/.test(label))                   return 'chat';
+    if (/trending/.test(label))                                      return 'trend';
+    if (/manage users|register.*user|user/.test(label))              return 'users';
+    if (/dark|light|theme|mode|switch/.test(label))                  return 'spin';
+    if (/save|copy|copied|download/.test(label))                     return 'pop';
+    if (/back|previous|return/.test(label))                          return 'arrowup';
+
+    // --- SVG shape-based fallback ---
+    if (svg) {
+      var lines    = svg.querySelectorAll('line').length;
+      var polygons = svg.querySelectorAll('polygon').length;
+      var polylines = svg.querySelectorAll('polyline').length;
+      var circles  = svg.querySelectorAll('circle').length;
+
+      if (lines >= 9)  return 'eq';        // filter by author
+      if (lines === 3 && polygons === 0) return 'sort'; // sort button
+      if (polygons > 0) return 'funnel';   // category filter
+      if (lines === 2 && polylines === 0)  return 'plus'; // + button
+      if (circles > 0 && polylines > 0)   return 'eye';  // eye icon
+      if (circles > 0)                    return 'users';
+    }
+
+    return 'bounce';
   }
 
   document.addEventListener('mousedown', function (e) {
@@ -102,17 +128,11 @@ export default function RootLayout({
     var anim = getAnim(btn);
     var cls  = 'svg-anim-' + anim;
 
-    // Remove existing anim classes first
-    ['bounce','shake','spin','pop','ping','jiggle'].forEach(function(a) {
-      btn.classList.remove('svg-anim-' + a);
-    });
-
-    // Force reflow so animation restarts even if same class
+    ALL.forEach(function(a) { btn.classList.remove('svg-anim-' + a); });
     void btn.offsetWidth;
     btn.classList.add(cls);
 
-    // Remove after animation finishes
-    setTimeout(function () { btn.classList.remove(cls); }, 550);
+    setTimeout(function () { btn.classList.remove(cls); }, 1200);
   }, true);
 })();
         ` }} />
