@@ -417,8 +417,8 @@ body:has(.cs-loader-logo)::-webkit-scrollbar {
   box-sizing: border-box;
 }
 .input-field:focus {
-  border-color: var(--teal);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--teal) 12%, transparent);
+  border-color: var(--border-color);
+  box-shadow: var(--shadow-sm);
   background: var(--surface);
 }
 .input-field:hover:not(:focus) { border-color: var(--text-muted); }
@@ -775,17 +775,14 @@ body:has(.cs-loader-logo)::-webkit-scrollbar {
 
 /* Focus visible for keyboard navigation */
 :focus-visible {
-  outline: 2px solid var(--teal);
-  outline-offset: 2px;
+  outline: none;
 }
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 2px solid var(--teal);
-  outline-offset: 2px;
-  border-radius: 4px;
+  outline: none;
 }
 /* ── PAGE LOADER ─────────────────────────────────────────────────────────── */
 @keyframes cs-loader-bounce {
