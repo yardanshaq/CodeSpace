@@ -32,7 +32,6 @@ model Admin {
   updatedAt   DateTime   @updatedAt
 }
 
-// Opaque session — cookie hanya berisi token random, tidak ada JWT
 model Session {
   id        String   @id @default(cuid())
   token     String   @unique  // 64-char hex random, disimpan sebagai SHA-256 hash
