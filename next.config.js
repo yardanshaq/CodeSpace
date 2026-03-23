@@ -47,7 +47,7 @@ const buildCsp = () => {
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' data: https://fonts.gstatic.com",
     // Favicon & OG image dari CDN
-    "img-src 'self' data: https://cdn.nekohime.site",
+    "img-src 'self' data: blob: https://cdn.nekohime.site",
     connectSrc,
     "object-src 'none'",
     "base-uri 'self'",
