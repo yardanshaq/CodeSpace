@@ -13,7 +13,7 @@
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Neon-336791?style=for-the-badge&logo=postgresql&logoColor=white)
 ![Deployed on Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-000000?style=for-the-badge&logo=vercel)
 
-[Live Demo](https://codespace.yardansh.com) · [Admin Panel](https://codespace.yardansh.com/post) · [Report Bug](https://github.com/shaqpi/CodeSpace/issues)
+[Live Demo](https://codespace.yardansh.com) · [Post Page](https://codespace.yardansh.com/post) · [Report Bug](https://github.com/yardanshaq/CodeSpace/issues)
 
 </div>
 
@@ -136,7 +136,7 @@ CodeSpace/
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/shaqpi/CodeSpace.git
+git clone https://github.com/yardanshaq/CodeSpace.git
 cd CodeSpace
 
 # 2. Install dependencies
@@ -283,5 +283,5 @@ Deploy to Vercel: push to GitHub → import at vercel.com → add env vars → d
 
 <div align="center">
   <img src="https://cdn.nekohime.site/file/sOyPp0Jp.png" alt="CS" width="32" height="32" style="border-radius:6px;vertical-align:middle;" />
-  &nbsp; Made with ☕ by <a href="https://github.com/shaqpi">shaqpi</a>
+  &nbsp; Made with ☕ by <a href="https://github.com/yardanshaq">shaq</a>
 </div>
