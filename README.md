@@ -13,7 +13,7 @@
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Neon-336791?style=for-the-badge&logo=postgresql&logoColor=white)
 ![Deployed on Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-000000?style=for-the-badge&logo=vercel)
 
-[Live Demo](https://codespace.yardansh.com) · [Post Page](https://codespace.yardansh.com/post) · [Report Bug](https://github.com/yardanshaq/CodeSpace/issues)
+[Live Demo](https://codespace.yardansh.com) · [Post a Snippet](https://codespace.yardansh.com/post) · [Report Bug](https://github.com/yardanshaq/CodeSpace/issues)
 
 </div>
 
@@ -37,7 +37,7 @@
 
 ## 🌐 Overview
 
-CodeSpace is a full-stack web application that lets administrators publish JavaScript code snippets that anyone can view, copy, download, and **execute on the server** — without needing to install anything locally. Think of it as a personal snippet vault with a built-in server-side JavaScript runner.
+CodeSpace is a full-stack web application that lets administrators publish JavaScript code snippets that anyone can view, copy, download, and **execute on the server** — without needing to install anything locally. Think of it as a personal snippet vault with a built-in server-side JavaScript runner, social features, and a real-time stats dashboard.
 
 ---
 
@@ -45,10 +45,14 @@ CodeSpace is a full-stack web application that lets administrators publish JavaS
 
 ### Public
 - 🔍 **Browse snippets** — view all public snippets organized by category
+- 🔥 **Trending** — discover the most-liked and most-viewed snippets
 - ▶️ **Run in browser** — execute JavaScript server-side, see output instantly
 - 📋 **Copy & Download** — one-click copy or download as `.js` file
-- 🔗 **Clean URLs** — YouTube-style links (`/code?v=my-snippet.js`)
+- 🔗 **Clean URLs** — share snippets via `/code?v=my-snippet.js` or `/snippet/[id]`
+- 💬 **Comments** — leave comments on snippets (members only)
+- ❤️ **Likes** — like snippets to show appreciation (members only)
 - 📎 **File attachments** — snippets can include downloadable source files
+- 💡 **Feedback** — submit bug reports or feature suggestions
 - 🌙 **Dark/Light mode** — theme toggle with system preference detection
 - 🤖 **Bot detection** — bots/scrapers get raw code output, browsers get full UI
 
@@ -56,9 +60,16 @@ CodeSpace is a full-stack web application that lets administrators publish JavaS
 - 🔐 **Secure login** — opaque session tokens (no JWT), bcrypt passwords
 - ✏️ **Create / Edit / Delete** snippets
 - 📁 **File manager** — upload and attach files to snippets
-- 👥 **Multi-admin** — SUPERADMIN can register additional admins
+- 👥 **Multi-admin** — SUPERADMIN can register additional admins and members
+- 📬 **Feedback inbox** — read and manage user-submitted feedback
+- 📊 **Stats dashboard** — real-time server metrics (CPU, memory, uptime, DB latency, request rate)
 - 🔄 **Live polling** — snippet list auto-refreshes every 3 seconds
 - ⌨️ **Keyboard shortcut** — `Ctrl+S` to save while editing
+
+### Auth
+- 🔑 **Forgot password** — email-based password reset flow
+- 🔒 **Reset password** — secure token-gated reset page
+- ⚙️ **Account settings** — update username and password
 
 ---
 
@@ -84,40 +95,54 @@ CodeSpace/
 ├── app/
 │   ├── api/
 │   │   ├── auth/
-│   │   │   ├── login/route.ts       # POST /api/auth/login
-│   │   │   ├── logout/route.ts      # POST /api/auth/logout
-│   │   │   ├── me/route.ts          # GET /api/auth/me
-│   │   │   ├── register/route.ts    # POST /api/auth/register
-│   │   │   └── settings/route.ts    # PUT /api/auth/settings
+│   │   │   ├── login/route.ts            # POST /api/auth/login
+│   │   │   ├── logout/route.ts           # POST /api/auth/logout
+│   │   │   ├── me/route.ts               # GET  /api/auth/me
+│   │   │   ├── register/route.ts         # POST /api/auth/register
+│   │   │   ├── settings/route.ts         # PUT  /api/auth/settings
+│   │   │   ├── forgot-password/route.ts  # POST /api/auth/forgot-password
+│   │   │   └── reset-password/route.ts   # POST /api/auth/reset-password
 │   │   ├── admin/
-│   │   │   ├── files/route.ts       # File manager
-│   │   │   ├── files/[id]/route.ts
 │   │   │   ├── snippets/[id]/files/route.ts
-│   │   │   └── users/               # User management
-│   │   ├── run/route.ts             # POST /api/run — JS executor
-│   │   └── snippets/                # Public snippet CRUD
-│   ├── code/page.tsx                # /code?v=filename.js
-│   ├── snippet/[id]/                # Legacy URL handler
-│   ├── post/page.tsx                # Dashboard (auth required)
-│   ├── settings/page.tsx            # Account settings
-│   ├── users/page.tsx               # User management (SUPERADMIN)
+│   │   │   └── users/route.ts            # User management (SUPERADMIN)
+│   │   ├── snippets/                     # Public snippet CRUD
+│   │   ├── comments/[id]/route.ts        # Comment management
+│   │   ├── feedback/route.ts             # Feedback submission
+│   │   ├── files/[id]/route.ts           # File download
+│   │   └── run/route.ts                  # POST /api/run — JS executor
+│   ├── page.tsx                          # / — Home
+│   ├── code/page.tsx                     # /code?v=filename.js
+│   ├── snippet/[id]/page.tsx             # /snippet/[id] — Snippet detail
+│   ├── trending/page.tsx                 # /trending
+│   ├── stats/page.tsx                    # /stats — Server metrics dashboard
+│   ├── feedback/
+│   │   ├── page.tsx                      # /feedback — Submit feedback
+│   │   └── inbox/page.tsx               # /feedback/inbox — Admin inbox
+│   ├── post/page.tsx                     # /post — Admin dashboard
+│   ├── admin/page.tsx                    # /admin — Redirects to /post
+│   ├── users/page.tsx                    # /users — User management (SUPERADMIN)
+│   ├── settings/page.tsx                 # /settings
 │   ├── login/page.tsx
 │   ├── register/page.tsx
-│   ├── loading.tsx                  # Global loading screen
-│   └── page.tsx                     # Home page
+│   ├── forgot-password/page.tsx
+│   ├── reset-password/page.tsx
+│   ├── raw/route.ts                      # Raw code output
+│   ├── not-found.tsx                     # 404 page (server component, proper OG metadata)
+│   └── loading.tsx
 ├── components/
-│   ├── DevToolsGuard.tsx            # Anti-devtools protection
+│   ├── DevToolsGuard.tsx                 # Anti-devtools protection
 │   ├── Navbar.tsx
-│   ├── PageLoader.tsx               # Reusable loading screen
+│   ├── NavigationLoader.tsx
+│   ├── PageLoader.tsx
 │   └── ThemeProvider.tsx
 ├── lib/
-│   ├── auth.ts                      # Session management
-│   ├── authCache.ts                 # Client-side user cache
-│   ├── chromium.ts                  # Puppeteer helper
-│   ├── prisma.ts                    # Prisma client singleton
-│   └── redis.ts                     # Upstash Redis client
-├── middleware.ts                    # Route protection + bot detection
-├── prisma/schema.prisma             # Database schema
+│   ├── auth.ts                           # Session management
+│   ├── authCache.ts                      # Client-side user cache
+│   ├── chromium.ts                       # Puppeteer helper
+│   ├── prisma.ts                         # Prisma client singleton
+│   └── redis.ts                          # Upstash Redis client
+├── middleware.ts                         # Route protection + bot detection
+├── prisma/schema.prisma                  # Database schema
 ├── next.config.js
 └── .env.example
 ```
@@ -183,11 +208,17 @@ UPSTASH_REDIS_REST_TOKEN="your_upstash_token"
 
 | Model | Description |
 |---|---|
-| `Admin` | Users with username, hashed password, and role |
+| `Admin` | Users with username, hashed password, and role (SUPERADMIN / ADMIN / MEMBER) |
 | `Session` | Opaque session tokens (SHA-256 hashed) with expiry |
 | `Snippet` | Code snippets with title, filename, category, visibility |
+| `Like` | Per-user likes on snippets (unique per user+snippet) |
+| `Comment` | User comments on snippets |
+| `Feedback` | User-submitted feedback/bug reports |
 | `GlobalFile` | Uploaded files stored as binary in DB |
 | `SnippetFile` | Join table linking snippets to their attached files |
+| `PasswordReset` | Secure time-limited tokens for password reset flow |
+| `ProxyDomain` | Allowed proxy domains for the sandbox |
+| `system_alerts` | System-wide alert messages |
 
 ```bash
 # Push schema (development)
@@ -209,6 +240,8 @@ npm run db:studio
 | `POST` | `/api/auth/logout` | Logout |
 | `GET` | `/api/auth/me` | Current session |
 | `PUT` | `/api/auth/settings` | Update username/password |
+| `POST` | `/api/auth/forgot-password` | Request password reset email |
+| `POST` | `/api/auth/reset-password` | Reset password via token |
 
 ### Snippets
 
@@ -221,6 +254,17 @@ npm run db:studio
 | `PUT` | `/api/snippets/[id]` | Update (auth) |
 | `DELETE` | `/api/snippets/[id]` | Delete (auth) |
 | `PATCH` | `/api/snippets/[id]` | Increment view count |
+| `POST` | `/api/snippets/[id]/like` | Like / unlike |
+| `GET` | `/api/snippets/[id]/comments` | Get comments |
+| `POST` | `/api/snippets/[id]/comments` | Post a comment (auth) |
+
+### Other
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `DELETE` | `/api/comments/[id]` | Delete a comment (auth) |
+| `POST` | `/api/feedback` | Submit feedback |
+| `GET` | `/api/files/[id]` | Download attached file |
 
 ### Code Runner
 
@@ -269,9 +313,9 @@ Deploy to Vercel: push to GitHub → import at vercel.com → add env vars → d
 
 **Async:** `p-limit` · `p-retry` · `p-queue` · `p-map` · `bottleneck` · `async-retry` · `delay`
 
-**Utils:** `lodash` · `dayjs` · `uuid` · `nanoid` · `crypto-js` · `qs` · `bcryptjs` · `jose` · `jsonwebtoken`
+**Utils:** `lodash` · `dayjs` · `uuid` · `nanoid` · `crypto-js` · `qs` · `bcryptjs` · `jose` · `jsonwebtoken` · `user-agents` · `random-useragent`
 
-**File:** `fs` · `fs/promises` · `path` · `os` · `sharp` · `mime-types` · `file-type` · `archiver` · `adm-zip`
+**File:** `fs` · `fs/promises` · `path` · `os` · `sharp` · `mime-types` · `file-type` · `archiver` · `adm-zip` · `fs-extra`
 
 **Data:** `csv-parse` · `csv-stringify` · `xlsx` · `json5` · `marked` · `turndown`
 
@@ -283,5 +327,5 @@ Deploy to Vercel: push to GitHub → import at vercel.com → add env vars → d
 
 <div align="center">
   <img src="https://cdn.nekohime.site/file/sOyPp0Jp.png" alt="CS" width="32" height="32" style="border-radius:6px;vertical-align:middle;" />
-  &nbsp; Made with ☕ by <a href="https://github.com/yardanshaq">shaq</a>
+  &nbsp; Made with ☕ by <a href="https://github.com/yardanshaq">yardanshaq</a>
 </div>
