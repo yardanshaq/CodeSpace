@@ -338,13 +338,38 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
         .catch(() => {});
     }
 
-    // Only poll snippet for view/code changes — likes optimistic, comments via bundle
-    pollRef.current = setInterval(() => {
-      fetchSnippet(true);
-    }, 10000);
     loadingTimerRef.current = setTimeout(() => setLoading(false), FETCH_TIMEOUT_MS + 1000);
+
+    // SSE — subscribe ke real-time stats (views, likes, comments)
+    // Menggantikan polling 10 detik — update instan tanpa delay
+    let es: EventSource | null = null;
+    if (typeof window !== "undefined" && id) {
+      es = new EventSource(`/api/snippets/${id}/sse`);
+      es.onmessage = (event) => {
+        try {
+          const stats = JSON.parse(event.data) as {
+            views: number;
+            likeCount: number;
+            commentCount: number;
+          };
+          setSnippet(prev =>
+            prev ? { ...prev, views: stats.views } : prev
+          );
+          setLikeCount(stats.likeCount);
+        } catch { /* malformed event, skip */ }
+      };
+      es.onerror = () => {
+        // SSE error (misal Vercel timeout) — fallback ke polling 10 detik
+        es?.close();
+        pollRef.current = setInterval(() => {
+          fetchSnippet(true);
+        }, 10000);
+      };
+    }
+
     return () => {
-      if (pollRef.current)       clearInterval(pollRef.current);
+      es?.close();
+      if (pollRef.current)         clearInterval(pollRef.current);
       if (loadingTimerRef.current) clearTimeout(loadingTimerRef.current);
     };
   }, [fetchBundle, fetchSnippet, id]);

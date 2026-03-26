@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { redis } from "@/lib/redis";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +61,12 @@ export async function POST(
     }
 
     const count = await prisma.like.count({ where: { snippetId } });
+
+    // Invalidate SSE cache supaya stats langsung update ke semua client
+    try {
+      await redis.del(`sse:stats:${snippetId}`);
+    } catch { /* non-fatal */ }
+
     return NextResponse.json({ liked: !existing, count });
   } catch (error) {
     console.error(error);

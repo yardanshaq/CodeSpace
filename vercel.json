@@ -8,6 +8,9 @@
     },
     "app/api/files/[id]/route.ts": {
       "maxDuration": 15
+    },
+    "app/api/snippets/[id]/sse/route.ts": {
+      "maxDuration": 60
     }
   },
   "build": {
