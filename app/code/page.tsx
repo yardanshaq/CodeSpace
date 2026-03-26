@@ -11,7 +11,7 @@ export async function generateMetadata({
   searchParams: { v?: string };
 }): Promise<Metadata> {
   const id = searchParams.v;
-  if (!id) return { title: "CodeSpace", description: "A space to stash simple snippets" };
+  if (!id) return { title: "CodeSpace", description: "A code snippet sharing platform" };
 
   try {
     const snippet = await prisma.snippet.findFirst({
@@ -24,7 +24,7 @@ export async function generateMetadata({
       },
     });
 
-    if (!snippet) return { title: "CodeSpace", description: "A space to stash simple snippets" };
+    if (!snippet) return { title: "CodeSpace", description: "A code snippet sharing platform" };
 
     const desc = `${snippet.category} snippet by ${snippet.admin.username} — ${snippet.filename}`;
 
@@ -52,7 +52,7 @@ export async function generateMetadata({
       },
     };
   } catch {
-    return { title: "CodeSpace", description: "A space to stash simple snippets" };
+    return { title: "CodeSpace", description: "A code snippet sharing platform" };
   }
 }
 

@@ -298,7 +298,7 @@ export default function HomePage() {
       <main className="main">
         <div className="home-hero">
           <h1 className="home-title">CodeSpace</h1>
-          <p className="home-subtitle">A space to stash simple snippets</p>
+          <p className="home-subtitle">A code snippet sharing platform</p>
 
           {/* ── Trending & Feedback buttons ── */}
           <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 20, flexWrap: "wrap" }}>
