@@ -186,7 +186,7 @@ export default function HomePage() {
       if (silent) params.set("_", Date.now().toString());
       const res  = await fetch(`/api/snippets?${params.toString()}`);
       const data = await res.json();
-      const list = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
+      const list = Array.isArray(data) ? data : [];
 
       const unique = Array.from(new Set(list.map((s: Snippet) => s.admin.username))) as string[];
       const uniqueCats = Array.from(new Set(list.map((s: Snippet) => s.category))) as string[];

@@ -55,11 +55,6 @@ export async function GET(req: NextRequest) {
     const adminView = searchParams.get("adminView") === "true";
     const author    = searchParams.get("author") || "";
 
-    // ── Pagination ────────────────────────────────────────────────────────────
-    const page  = Math.max(1, parseInt(searchParams.get("page") || "1"));
-    const limit = Math.min(50, Math.max(1, parseInt(searchParams.get("limit") || "20")));
-    const skip  = (page - 1) * limit;
-
     const rawSort  = searchParams.get("sortBy") || "createdAt";
     const rawOrder = searchParams.get("order")  || "desc";
     const sortBy: SortField = (["createdAt", "title", "views"].includes(rawSort)
@@ -93,8 +88,7 @@ export async function GET(req: NextRequest) {
       };
     }
 
-    const [snippets, total] = await Promise.all([
-      prisma.snippet.findMany({
+    const snippets = await prisma.snippet.findMany({
         where,
         select: {
           id:          true,
@@ -114,11 +108,7 @@ export async function GET(req: NextRequest) {
           // ── code excluded from list endpoint — fetch via /api/snippets/[id] ──
         },
         orderBy: { [sortBy]: order },
-        take: limit,
-        skip,
-      }),
-      prisma.snippet.count({ where }),
-    ]);
+    });
 
     const snippetsWithFiles = await Promise.all(
       snippets.map(async (s) => ({
@@ -129,15 +119,7 @@ export async function GET(req: NextRequest) {
       }))
     );
 
-    return NextResponse.json({
-      data:  snippetsWithFiles,
-      meta: {
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit),
-      },
-    });
+    return NextResponse.json(snippetsWithFiles);
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
