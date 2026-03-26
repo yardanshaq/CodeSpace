@@ -59,7 +59,7 @@ export default function TrendingPage() {
     try {
       const res  = await fetch("/api/snippets?sortBy=views&order=desc");
       const data = await res.json();
-      const list: Snippet[] = Array.isArray(data) ? data : [];
+      const list: Snippet[] = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
       cacheRef.current = list;
       setAllSnippets(list);
     } catch { /* silent */ }

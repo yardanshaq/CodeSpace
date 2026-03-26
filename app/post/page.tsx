@@ -157,8 +157,9 @@ export default function PostPage() {
     if (!silent) setSnippetsLoading(true);
     try {
       const res  = await fetch(`/api/snippets?adminView=true`);
-      const data = await res.json();
-      if (!Array.isArray(data)) return;
+      const raw = await res.json();
+      const data = Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : null;
+      if (!data) return;
       if (!silent) {
         setSnippets(data);
         setSnippetsLoading(false);

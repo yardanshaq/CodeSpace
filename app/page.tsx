@@ -186,7 +186,7 @@ export default function HomePage() {
       if (silent) params.set("_", Date.now().toString());
       const res  = await fetch(`/api/snippets?${params.toString()}`);
       const data = await res.json();
-      const list = Array.isArray(data) ? data : [];
+      const list = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
 
       const unique = Array.from(new Set(list.map((s: Snippet) => s.admin.username))) as string[];
       const uniqueCats = Array.from(new Set(list.map((s: Snippet) => s.category))) as string[];
@@ -298,7 +298,7 @@ export default function HomePage() {
       <main className="main">
         <div className="home-hero">
           <h1 className="home-title">CodeSpace</h1>
-          <p className="home-subtitle">A code snippet sharing platform</p>
+          <p className="home-subtitle">A space to stash simple snippets</p>
 
           {/* ── Trending & Feedback buttons ── */}
           <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 20, flexWrap: "wrap" }}>
