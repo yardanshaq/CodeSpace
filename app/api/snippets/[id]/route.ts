@@ -41,16 +41,24 @@ export async function GET(
     if (!snippet) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+
+    const session = await getSession();
+    const isOwner      = session?.id === snippet.adminId;
+    const isSuperAdmin = session?.role === "SUPERADMIN";
+
     if (!snippet.isPublic) {
-      const session = await getSession();
-      const isOwner = session?.id === snippet.adminId;
-      const isSuperAdmin = session?.role === "SUPERADMIN";
       if (!session || (!isOwner && !isSuperAdmin)) {
         return NextResponse.json({ error: "Not found" }, { status: 404 });
       }
     }
+
+    // Strip adminId from public responses; only owners / superadmins see it
+    const { adminId, ...publicSnippet } = snippet;
+
     return NextResponse.json({
-      ...snippet,
+      ...publicSnippet,
+      // Re-attach adminId only for authenticated privileged viewers
+      ...(isOwner || isSuperAdmin ? { adminId } : {}),
       attachments: await getSnippetFiles(snippet.id),
     });
   } catch (error) {
@@ -70,7 +78,7 @@ export async function PATCH(
     }
     if (!snippet.isPublic) {
       const session = await getSession();
-      const isOwner = session?.id === snippet.adminId;
+      const isOwner      = session?.id === snippet.adminId;
       const isSuperAdmin = session?.role === "SUPERADMIN";
       if (!session || (!isOwner && !isSuperAdmin)) {
         return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -80,7 +88,7 @@ export async function PATCH(
       where: { id: snippet.id },
       data: {
         views: { increment: 1 },
-        updatedAt: snippet.updatedAt, // preserve — views increment should not affect "last edited" timestamp
+        updatedAt: snippet.updatedAt,
       },
       select: { views: true },
     });
@@ -119,17 +127,31 @@ export async function PUT(
         .toLowerCase()
         .replace(/\s+/g, "-")
         .replace(/[^a-z0-9-]/g, "") + ".js";
+
     const updated = await prisma.snippet.update({
       where: { id: snippet.id },
       data: {
-        title: title ?? snippet.title,
+        title:    title    ?? snippet.title,
         filename,
-        code: code ?? snippet.code,
+        code:     code     ?? snippet.code,
         category: category ?? snippet.category,
         isPublic: isPublic !== undefined ? isPublic : snippet.isPublic,
       },
-      include: { admin: { select: { username: true } } },
+      select: {
+        id:        true,
+        title:     true,
+        filename:  true,
+        category:  true,
+        isPublic:  true,
+        views:     true,
+        code:      true,
+        createdAt: true,
+        updatedAt: true,
+        adminId:   true,
+        admin:     { select: { username: true } },
+      },
     });
+
     return NextResponse.json({
       ...updated,
       attachments: await getSnippetFiles(updated.id),
@@ -156,7 +178,6 @@ export async function DELETE(
     if (session.role !== "SUPERADMIN" && snippet.adminId !== session.id) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
-    // Delete Redis files associated with this snippet
     try {
       const fileIds = await redis.get<string[]>(`snippet:files:${snippet.id}`);
       if (Array.isArray(fileIds) && fileIds.length > 0) {

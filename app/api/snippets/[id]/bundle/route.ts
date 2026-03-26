@@ -29,7 +29,18 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 
     if (!snippet) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+    // Access control for private snippets
+    if (!snippet.isPublic) {
+      const isOwner      = session?.id === snippet.adminId;
+      const isSuperAdmin = session?.role === "SUPERADMIN";
+      if (!session || (!isOwner && !isSuperAdmin)) {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
+    }
+
     const snippetId = snippet.id;
+    const isOwner      = session?.id === snippet.adminId;
+    const isSuperAdmin = session?.role === "SUPERADMIN";
 
     const [likeCount, userLike, comments, files] = await Promise.all([
       prisma.like.count({ where: { snippetId } }),
@@ -44,7 +55,19 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       getSnippetFiles(snippetId),
     ]);
 
-    return NextResponse.json({ snippet, likeCount, liked: !!userLike, comments, files });
+    // Strip adminId from public response
+    const { adminId, ...publicSnippet } = snippet;
+
+    return NextResponse.json({
+      snippet: {
+        ...publicSnippet,
+        ...(isOwner || isSuperAdmin ? { adminId } : {}),
+      },
+      likeCount,
+      liked: !!userLike,
+      comments,
+      files,
+    });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Server error" }, { status: 500 });

@@ -55,6 +55,11 @@ export async function GET(req: NextRequest) {
     const adminView = searchParams.get("adminView") === "true";
     const author    = searchParams.get("author") || "";
 
+    // ── Pagination ────────────────────────────────────────────────────────────
+    const page  = Math.max(1, parseInt(searchParams.get("page") || "1"));
+    const limit = Math.min(50, Math.max(1, parseInt(searchParams.get("limit") || "20")));
+    const skip  = (page - 1) * limit;
+
     const rawSort  = searchParams.get("sortBy") || "createdAt";
     const rawOrder = searchParams.get("order")  || "desc";
     const sortBy: SortField = (["createdAt", "title", "views"].includes(rawSort)
@@ -88,14 +93,32 @@ export async function GET(req: NextRequest) {
       };
     }
 
-    const snippets = await prisma.snippet.findMany({
-      where,
-      include: {
-        admin:  { select: { username: true } },
-        _count: { select: { likes: true, comments: true } },
-      },
-      orderBy: { [sortBy]: order },
-    });
+    const [snippets, total] = await Promise.all([
+      prisma.snippet.findMany({
+        where,
+        select: {
+          id:          true,
+          title:       true,
+          filename:    true,
+          category:    true,
+          isPublic:    true,
+          views:       true,
+          createdAt:   true,
+          updatedAt:   true,
+          // ── adminId intentionally excluded from public list ──
+          // Only include adminId for authenticated adminView so owner
+          // can identify their own snippets client-side if needed.
+          ...(adminView && session ? { adminId: true } : {}),
+          admin:  { select: { username: true } },
+          _count: { select: { likes: true, comments: true } },
+          // ── code excluded from list endpoint — fetch via /api/snippets/[id] ──
+        },
+        orderBy: { [sortBy]: order },
+        take: limit,
+        skip,
+      }),
+      prisma.snippet.count({ where }),
+    ]);
 
     const snippetsWithFiles = await Promise.all(
       snippets.map(async (s) => ({
@@ -106,7 +129,15 @@ export async function GET(req: NextRequest) {
       }))
     );
 
-    return NextResponse.json(snippetsWithFiles);
+    return NextResponse.json({
+      data:  snippetsWithFiles,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
@@ -142,9 +173,17 @@ export async function POST(req: NextRequest) {
 
     const snippet = await prisma.snippet.create({
       data: { title, filename, code, category: category || "Scrape", isPublic: resolvedIsPublic, adminId: session.id },
-      include: {
-        admin:  { select: { username: true } },
-        _count: { select: { likes: true, comments: true } },
+      select: {
+        id:        true,
+        title:     true,
+        filename:  true,
+        category:  true,
+        isPublic:  true,
+        views:     true,
+        createdAt: true,
+        updatedAt: true,
+        admin:     { select: { username: true } },
+        _count:    { select: { likes: true, comments: true } },
       },
     });
 

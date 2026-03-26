@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { redis } from "@/lib/redis";
+import { getSession } from "@/lib/auth";
 import os from "os";
 
 export const runtime = "nodejs";
@@ -42,6 +43,9 @@ async function fetchRegionFromIP(): Promise<string> {
 
 export async function GET() {
   try {
+    const session = await getSession();
+    const isSuperAdmin = session?.role === "SUPERADMIN";
+
     const reqCount = await redis.incr(REQ_COUNTER_KEY);
 
     const pingStart = Date.now();
@@ -69,38 +73,55 @@ export async function GET() {
 
     await redis.set(REQ_COUNTER_KEY, 0);
 
-    const mem     = process.memoryUsage();
-    const total   = os.totalmem();
-    const free    = os.freemem();
-    const cpus    = os.cpus();
-    const loadAvg = os.loadavg();
-
-    return NextResponse.json({
-      snippets:     snippetCount,
-      users:        userCount,
-      views:        totalViews._sum.views ?? 0,
-      likes:        totalLikes,
-      comments:     totalComments,
-      dbLatency,
-      requestDelta: reqCount,
+    // ── Public stats (safe for everyone) ─────────────────────────────────────
+    const publicStats = {
+      snippets:      snippetCount,
+      users:         userCount,
+      views:         totalViews._sum.views ?? 0,
+      likes:         totalLikes,
+      comments:      totalComments,
       recentSnippets,
-      uptime:       uptimeSeconds,
-      timestamp:    new Date().toISOString(),
-      hardware: {
-        cpu:         cpus[0]?.model ?? "Unknown",
-        cpuCores:    cpus.length,
-        totalMem:    total,
-        usedMem:     total - free,
-        heapUsed:    mem.heapUsed,
-        heapTotal:   mem.heapTotal,
-        rss:         mem.rss,
-        loadAvg1:    loadAvg[0],
-        loadAvg5:    loadAvg[1],
-        region:      regionLabel,
-        nodeVersion: process.version,
-        platform:    process.platform,
-      },
-    }, {
+      timestamp:     new Date().toISOString(),
+    };
+
+    // ── Privileged stats (superadmin only) ───────────────────────────────────
+    // Hardware details, memory, CPU, node version, uptime, and region expose
+    // server fingerprinting data that could aid targeted attacks.
+    if (isSuperAdmin) {
+      const mem     = process.memoryUsage();
+      const total   = os.totalmem();
+      const free    = os.freemem();
+      const cpus    = os.cpus();
+      const loadAvg = os.loadavg();
+
+      return NextResponse.json({
+        ...publicStats,
+        dbLatency,
+        requestDelta: reqCount,
+        uptime: uptimeSeconds,
+        hardware: {
+          cpu:         cpus[0]?.model ?? "Unknown",
+          cpuCores:    cpus.length,
+          totalMem:    total,
+          usedMem:     total - free,
+          heapUsed:    mem.heapUsed,
+          heapTotal:   mem.heapTotal,
+          rss:         mem.rss,
+          loadAvg1:    loadAvg[0],
+          loadAvg5:    loadAvg[1],
+          region:      regionLabel,
+          nodeVersion: process.version,
+          platform:    process.platform,
+        },
+      }, {
+        headers: {
+          "Cache-Control": "no-store",
+          "X-Robots-Tag":  "noindex",
+        },
+      });
+    }
+
+    return NextResponse.json(publicStats, {
       headers: {
         "Cache-Control": "no-store",
         "X-Robots-Tag":  "noindex",
