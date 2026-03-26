@@ -85,9 +85,12 @@ export async function PATCH(
       select: { views: true },
     });
 
-    // Invalidate SSE cache supaya view count langsung update ke semua client
+    // Invalidate SSE cache (snippet detail + global)
     try {
-      await redis.del(`sse:stats:${snippet.id}`);
+      await Promise.all([
+        redis.del(`sse:stats:${snippet.id}`),
+        redis.del('sse:global:stats'),
+      ]);
     } catch { /* non-fatal */ }
 
     return NextResponse.json({ views: updated.views });
