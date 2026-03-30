@@ -103,9 +103,11 @@ export async function GET(req: NextRequest) {
           // Only include adminId for authenticated adminView so owner
           // can identify their own snippets client-side if needed.
           ...(adminView && session ? { adminId: true } : {}),
+          // code hanya dikembalikan untuk adminView (owner/superadmin)
+          // Public list tidak perlu code — hemat bandwidth & cegah scraping
+          ...(adminView && session ? { code: true } : {}),
           admin:  { select: { username: true } },
           _count: { select: { likes: true, comments: true } },
-          // ── code excluded from list endpoint — fetch via /api/snippets/[id] ──
         },
         orderBy: { [sortBy]: order },
     });
