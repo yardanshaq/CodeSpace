@@ -115,6 +115,13 @@ export default function PostPage() {
   const [formSuccess, setFormSuccess] = useState("");
   const [formLoading, setFormLoading] = useState(false);
 
+  const hasChanges = editSnippet
+    ? form.title    !== editSnippet.title    ||
+      form.code     !== editSnippet.code     ||
+      form.category !== editSnippet.category ||
+      form.isPublic !== editSnippet.isPublic
+    : true;
+
   const [regForm, setRegForm]     = useState({ username: "", password: "" });
   const [regError, setRegError]   = useState("");
   const [regSuccess, setRegSuccess] = useState("");
@@ -861,7 +868,7 @@ export default function PostPage() {
             </div>
             <div className="modal-footer">
               <button className="btn btn-white" onClick={() => setShowEditModal(false)}>CANCEL</button>
-              <button className="btn btn-teal" onClick={handleEditSnippet} disabled={formLoading} aria-label="Save changes" title="Ctrl+S">
+              <button className="btn btn-teal" onClick={handleEditSnippet} disabled={formLoading || !hasChanges} aria-label="Save changes" title="Ctrl+S">
                 {formLoading ? "SAVING..." : "SAVE CHANGES"}{!formLoading && <span style={{ fontSize: 9, opacity: .5, marginLeft: 4 }}>Ctrl+S</span>}
               </button>
             </div>
