@@ -539,6 +539,14 @@ a[href] svg {
   box-shadow: none !important;
   filter: brightness(0.92);
 }
+.btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  transform: none !important;
+  filter: none !important;
+  box-shadow: none !important;
+  pointer-events: none;
+}
 
 .btn-black  { background: var(--text);    color: var(--surface); box-shadow: var(--shadow-sm); }
 .btn-black:hover  { box-shadow: var(--shadow-lg); }

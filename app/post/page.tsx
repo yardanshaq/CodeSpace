@@ -214,7 +214,7 @@ export default function PostPage() {
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
         e.preventDefault();
         if (showCreateModal) handleCreateSnippet();
-        else if (showEditModal) handleEditSnippet();
+        else if (showEditModal && hasChanges) handleEditSnippet();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
