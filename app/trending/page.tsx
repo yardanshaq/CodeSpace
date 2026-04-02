@@ -20,7 +20,27 @@ interface Snippet {
 }
 
 function formatDate(d: string) {
-  return new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  const date = new Date(d);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  const isToday =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+
+  if (isToday) {
+    return date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  } else if (diffDays === 1) {
+    return "a day ago";
+  } else if (diffDays < 7) {
+    return `${diffDays} days ago`;
+  } else if (diffDays === 7) {
+    return "a week ago";
+  } else {
+    return date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  }
 }
 
 const CATEGORY_COLORS: Record<string, string> = {

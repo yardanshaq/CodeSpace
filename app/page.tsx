@@ -56,11 +56,27 @@ function getCategoryStyle(cat: string) {
 }
 
 function formatDate(d: string) {
-  return new Date(d).toLocaleDateString("en-GB", {
-    day:   "2-digit",
-    month: "short",
-    year:  "numeric",
-  });
+  const date = new Date(d);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  const isToday =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+
+  if (isToday) {
+    return date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  } else if (diffDays === 1) {
+    return "a day ago";
+  } else if (diffDays < 7) {
+    return `${diffDays} days ago`;
+  } else if (diffDays === 7) {
+    return "a week ago";
+  } else {
+    return date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  }
 }
 
 export default function HomePage() {
@@ -669,7 +685,7 @@ export default function HomePage() {
                         <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
                       </svg>
                       {formatDate(snippet.createdAt)}
-                      {snippet.updatedAt !== snippet.createdAt && (
+                      {formatDate(snippet.updatedAt) !== formatDate(snippet.createdAt) && (
                         <span style={{ color: "var(--text-faint)", marginLeft: 2 }}>(updated {formatDate(snippet.updatedAt)})</span>
                       )}
                     </span>
