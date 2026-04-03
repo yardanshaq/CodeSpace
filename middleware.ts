@@ -1,10 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { randomBytes } from "crypto";
 
 const isDev = process.env.NODE_ENV !== "production";
 
 function generateNonce(): string {
-  return randomBytes(16).toString("base64");
+  // Pakai Web Crypto API — kompatibel dengan Edge Runtime
+  const array = new Uint8Array(16);
+  crypto.getRandomValues(array);
+
+  let binary = "";
+  for (let i = 0; i < array.length; i++) {
+    binary += String.fromCharCode(array[i]);
+  }
+
+  return btoa(binary);
 }
 
 function buildCsp(nonce: string): string {
