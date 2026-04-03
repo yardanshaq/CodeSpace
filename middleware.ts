@@ -3,7 +3,6 @@ import { NextRequest, NextResponse } from "next/server";
 const isDev = process.env.NODE_ENV !== "production";
 
 function generateNonce(): string {
-  // Pakai Web Crypto API — kompatibel dengan Edge Runtime
   const array = new Uint8Array(16);
   crypto.getRandomValues(array);
 
@@ -17,12 +16,12 @@ function generateNonce(): string {
 
 function buildCsp(nonce: string): string {
   const scriptSrc = isDev
-    ? `script-src 'self' 'unsafe-inline' 'unsafe-eval' https://static.cloudflareinsights.com`
-    : `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' https://static.cloudflareinsights.com`;
+    ? `script-src 'self' 'unsafe-inline' 'unsafe-eval' https://static.cloudflareinsights.com https://vercel.live`
+    : `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' 'unsafe-inline' 'unsafe-eval' https://static.cloudflareinsights.com https://vercel.live`;
 
   const connectSrc = isDev
-    ? "connect-src 'self' ws: wss: https://cloudflareinsights.com"
-    : "connect-src 'self' https://cloudflareinsights.com";
+    ? "connect-src 'self' ws: wss: https://cloudflareinsights.com https://vercel.live"
+    : "connect-src 'self' https://cloudflareinsights.com https://vercel.live";
 
   return [
     "default-src 'self'",
@@ -70,38 +69,22 @@ function hasValidCookieFormat(token: string | undefined): boolean {
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+  let res = NextResponse.next();
 
-  // /login dan /register — JANGAN redirect hanya berdasarkan format cookie.
-  // Session bisa saja sudah expired di DB meski cookie-nya masih ada dan valid formatnya.
-  // Biarkan login page yang handle redirect (via /api/auth/me check di client),
-  // sehingga cookie stale bisa otomatis di-clear tanpa perlu hapus manual.
-  if (pathname === "/login" || pathname === "/register") {
-    return NextResponse.next();
-  }
-
-  // /users — butuh login
   if (pathname === "/users" || pathname.startsWith("/users/")) {
     const token = req.cookies.get(COOKIE_NAME)?.value;
     if (!hasValidCookieFormat(token)) {
       const url = req.nextUrl.clone();
       url.pathname = "/login";
       url.searchParams.set("callbackUrl", pathname);
-      return NextResponse.redirect(url);
+      res = NextResponse.redirect(url);
     }
-    return NextResponse.next();
-  }
-
-  // /api/admin — semua endpoint admin butuh cookie yang valid
-  if (pathname.startsWith("/api/admin")) {
+  } else if (pathname.startsWith("/api/admin")) {
     const token = req.cookies.get(COOKIE_NAME)?.value;
     if (!hasValidCookieFormat(token)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    return NextResponse.next();
-  }
-
-  // /post dan /settings — butuh login
-  if (
+  } else if (
     pathname === "/post" || pathname.startsWith("/post/") ||
     pathname === "/settings" || pathname.startsWith("/settings/")
   ) {
@@ -110,51 +93,44 @@ export function middleware(req: NextRequest) {
       const url = req.nextUrl.clone();
       url.pathname = "/login";
       url.searchParams.set("callbackUrl", pathname);
-      return NextResponse.redirect(url);
+      res = NextResponse.redirect(url);
     }
-    return NextResponse.next();
-  }
-
-  // /code?v=xxx — scraper diarahkan ke versi raw, bot preview dibiarkan lewat
-  if (pathname === "/code") {
+  } else if (pathname === "/code") {
     const id = req.nextUrl.searchParams.get("v");
     if (id) {
       const ua = req.headers.get("user-agent") || "";
-      if (isSocialPreviewBot(ua)) return NextResponse.next();
-      if (isProgrammaticScraper(ua)) {
+      if (!isSocialPreviewBot(ua) && isProgrammaticScraper(ua)) {
         const rawUrl = req.nextUrl.clone();
         rawUrl.pathname = `/snippet/${id}/raw`;
         rawUrl.search = "";
-        return NextResponse.rewrite(rawUrl);
+        res = NextResponse.rewrite(rawUrl);
+      }
+    }
+  } else {
+    const snippetMatch = pathname.match(/^\/snippet\/([^/]+)$/);
+    if (snippetMatch) {
+      const id = snippetMatch[1];
+      const ua = req.headers.get("user-agent") || "";
+      if (!isSocialPreviewBot(ua) && isProgrammaticScraper(ua)) {
+        const rawUrl = req.nextUrl.clone();
+        rawUrl.pathname = `/snippet/${id}/raw`;
+        res = NextResponse.rewrite(rawUrl);
       }
     }
   }
 
-  // /snippet/[id] — scraper juga diarahkan ke versi raw
-  const snippetMatch = pathname.match(/^\/snippet\/([^/]+)$/);
-  if (snippetMatch) {
-    const id = snippetMatch[1];
-    const ua = req.headers.get("user-agent") || "";
-    if (isSocialPreviewBot(ua)) return NextResponse.next();
-    if (isProgrammaticScraper(ua)) {
-      const rawUrl = req.nextUrl.clone();
-      rawUrl.pathname = `/snippet/${id}/raw`;
-      return NextResponse.rewrite(rawUrl);
-    }
+  if (res.status !== 401) {
+    const nonce = generateNonce();
+    const csp = buildCsp(nonce);
+    res.headers.set("Content-Security-Policy", csp);
+    res.headers.set("x-nonce", nonce);
   }
 
-  // Generate nonce untuk semua request HTML biasa — inject CSP per-request
-  const nonce = generateNonce();
-  const csp   = buildCsp(nonce);
-  const res   = NextResponse.next();
-  res.headers.set("Content-Security-Policy", csp);
-  res.headers.set("x-nonce", nonce); // dibaca oleh layout.tsx untuk <Script nonce>
   return res;
 }
 
 export const config = {
   matcher: [
-    // Exclude static files & internal Next.js routes dari nonce injection
-    "/((?!_next/static|_next/image|favicon.ico|.*\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|woff2?|ttf)).*)",
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|woff2?|ttf)).*)",
   ],
 };
