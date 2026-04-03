@@ -17,11 +17,6 @@ function buildCsp(nonce: string): string {
     ? `script-src 'self' 'unsafe-inline' 'unsafe-eval' https://static.cloudflareinsights.com`
     : `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' https://static.cloudflareinsights.com`;
 
-  // ↓ Tambahkan nonce di style-src — unsafe-inline jadi fallback browser lama saja
-  const styleSrc = isDev
-    ? `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com`
-    : `style-src 'self' 'unsafe-inline' 'nonce-${nonce}' https://fonts.googleapis.com`;
-
   const connectSrc = isDev
     ? "connect-src 'self' ws: wss: https://cloudflareinsights.com"
     : "connect-src 'self' https://cloudflareinsights.com";
@@ -29,7 +24,7 @@ function buildCsp(nonce: string): string {
   return [
     "default-src 'self'",
     scriptSrc,
-    styleSrc,
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",  // ← kembali tanpa nonce
     "font-src 'self' data: https://fonts.gstatic.com",
     "img-src 'self' data: blob: https://cdn.nekohime.site",
     connectSrc,
