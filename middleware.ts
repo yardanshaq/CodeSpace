@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const isDev = process.env.NODE_ENV !== "production";
+// Cek apakah web jalan di domain utama (True Production) atau di mode Preview/Dev
+const isTrueProd = process.env.VERCEL_ENV === "production" || 
+                  (!process.env.VERCEL_ENV && process.env.NODE_ENV === "production");
 
 function generateNonce(): string {
   const array = new Uint8Array(16);
@@ -15,24 +17,34 @@ function generateNonce(): string {
 }
 
 function buildCsp(nonce: string): string {
-  // Hanya 'unsafe-inline' saat dev. Di production, ketat pakai nonce dan strict-dynamic
-  const scriptSrc = isDev
-    ? `script-src 'self' 'unsafe-inline' 'unsafe-eval' https://static.cloudflareinsights.com https://vercel.live`
-    : `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' 'unsafe-inline' 'unsafe-eval' https://static.cloudflareinsights.com https://vercel.live`;
+  // 1. TRUE PRODUCTION: CSP Super Ketat untuk skor 15/15.
+  if (isTrueProd) {
+    return [
+      "default-src 'self'",
+      `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' https://static.cloudflareinsights.com`,
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src 'self' data: https://fonts.gstatic.com",
+      "img-src 'self' data: blob: https://cdn.nekohime.site",
+      "connect-src 'self' https://cloudflareinsights.com",
+      "frame-src 'self'",
+      "child-src 'self'",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "frame-ancestors 'none'",
+    ].join("; ");
+  }
 
-  const connectSrc = isDev
-    ? "connect-src 'self' ws: wss: https://cloudflareinsights.com https://vercel.live"
-    : "connect-src 'self' https://cloudflareinsights.com https://vercel.live";
-
+  // 2. PREVIEW / DEV: Dilonggarkan sedikit agar Vercel Toolbar & HMR Next.js tidak error.
   return [
     "default-src 'self'",
-    scriptSrc,
+    `script-src 'self' 'unsafe-inline' 'unsafe-eval' https://static.cloudflareinsights.com https://vercel.live`,
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' data: https://fonts.gstatic.com",
     "img-src 'self' data: blob: https://cdn.nekohime.site",
-    connectSrc,
-    "frame-src 'self' https://vercel.live", // Izinkan iframe Vercel
-    "child-src 'self' https://vercel.live", // Backup untuk browser tipe tertentu
+    "connect-src 'self' ws: wss: https://cloudflareinsights.com https://vercel.live",
+    "frame-src 'self' https://vercel.live",
+    "child-src 'self' https://vercel.live",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
@@ -73,25 +85,28 @@ function hasValidCookieFormat(token: string | undefined): boolean {
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const ua = req.headers.get("user-agent") || "";
+  
+  // TAMPUNG DULU! Jangan return secara prematur
+  let res = NextResponse.next();
 
-  // 1. Tangani Scraper Dulu (Raw content, no CSP needed)
+  // 1. Scraper & Raw Code Routing
   if (pathname === "/code") {
     const id = req.nextUrl.searchParams.get("v");
     if (id && !isSocialPreviewBot(ua) && isProgrammaticScraper(ua)) {
       const rawUrl = req.nextUrl.clone();
       rawUrl.pathname = `/snippet/${id}/raw`;
       rawUrl.search = "";
-      return NextResponse.rewrite(rawUrl);
+      res = NextResponse.rewrite(rawUrl);
     }
-  }
-
-  const snippetMatch = pathname.match(/^\/snippet\/([^/]+)$/);
-  if (snippetMatch) {
-    const id = snippetMatch[1];
-    if (!isSocialPreviewBot(ua) && isProgrammaticScraper(ua)) {
-      const rawUrl = req.nextUrl.clone();
-      rawUrl.pathname = `/snippet/${id}/raw`;
-      return NextResponse.rewrite(rawUrl);
+  } else {
+    const snippetMatch = pathname.match(/^\/snippet\/([^/]+)$/);
+    if (snippetMatch) {
+      const id = snippetMatch[1];
+      if (!isSocialPreviewBot(ua) && isProgrammaticScraper(ua)) {
+        const rawUrl = req.nextUrl.clone();
+        rawUrl.pathname = `/snippet/${id}/raw`;
+        res = NextResponse.rewrite(rawUrl);
+      }
     }
   }
 
@@ -102,18 +117,15 @@ export function middleware(req: NextRequest) {
       const url = req.nextUrl.clone();
       url.pathname = "/login";
       url.searchParams.set("callbackUrl", pathname);
-      return NextResponse.redirect(url);
+      res = NextResponse.redirect(url);
     }
-  }
-
-  if (pathname.startsWith("/api/admin")) {
+  } else if (pathname.startsWith("/api/admin")) {
     const token = req.cookies.get(COOKIE_NAME)?.value;
     if (!hasValidCookieFormat(token)) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      // Khusus endpoint API, boleh langsung return JSON
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 }); 
     }
-  }
-
-  if (
+  } else if (
     pathname === "/post" || pathname.startsWith("/post/") ||
     pathname === "/settings" || pathname.startsWith("/settings/")
   ) {
@@ -122,16 +134,17 @@ export function middleware(req: NextRequest) {
       const url = req.nextUrl.clone();
       url.pathname = "/login";
       url.searchParams.set("callbackUrl", pathname);
-      return NextResponse.redirect(url);
+      res = NextResponse.redirect(url);
     }
   }
 
-  // 3. Inject CSP ke semua HTML Response
-  const nonce = generateNonce();
-  const csp = buildCsp(nonce);
-  const res = NextResponse.next();
-  res.headers.set("Content-Security-Policy", csp);
-  res.headers.set("x-nonce", nonce);
+  // 3. Eksekusi Injeksi CSP (Termasuk untuk /login dan /register)
+  if (res.status !== 401) {
+    const nonce = generateNonce();
+    const csp = buildCsp(nonce);
+    res.headers.set("Content-Security-Policy", csp);
+    res.headers.set("x-nonce", nonce);
+  }
 
   return res;
 }
