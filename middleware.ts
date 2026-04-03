@@ -1,4 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomBytes } from "crypto";
+
+const isDev = process.env.NODE_ENV !== "production";
+
+function generateNonce(): string {
+  return randomBytes(16).toString("base64");
+}
+
+function buildCsp(nonce: string): string {
+  const scriptSrc = isDev
+    ? `script-src 'self' 'unsafe-inline' 'unsafe-eval' https://static.cloudflareinsights.com`
+    : `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' https://static.cloudflareinsights.com`;
+
+  const connectSrc = isDev
+    ? "connect-src 'self' ws: wss: https://cloudflareinsights.com"
+    : "connect-src 'self' https://cloudflareinsights.com";
+
+  return [
+    "default-src 'self'",
+    scriptSrc,
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' data: https://fonts.gstatic.com",
+    "img-src 'self' data: blob: https://cdn.nekohime.site",
+    connectSrc,
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ].join("; ");
+}
 
 const COOKIE_NAME = "sid";
 
@@ -105,16 +135,18 @@ export function middleware(req: NextRequest) {
     }
   }
 
-  return NextResponse.next();
+  // Generate nonce untuk semua request HTML biasa — inject CSP per-request
+  const nonce = generateNonce();
+  const csp   = buildCsp(nonce);
+  const res   = NextResponse.next();
+  res.headers.set("Content-Security-Policy", csp);
+  res.headers.set("x-nonce", nonce); // dibaca oleh layout.tsx untuk <Script nonce>
+  return res;
 }
 
 export const config = {
   matcher: [
-    "/login", "/register",
-    "/users", "/users/:path*",
-    "/api/admin/:path*",
-    "/post", "/post/:path*",
-    "/settings", "/settings/:path*",
-    "/code", "/snippet/:id*",
+    // Exclude static files & internal Next.js routes dari nonce injection
+    "/((?!_next/static|_next/image|favicon.ico|.*\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|woff2?|ttf)).*)",
   ],
 };

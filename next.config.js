@@ -29,11 +29,14 @@ const RUN_ROUTE_EXTERNALS = [
 
 const isDev = process.env.NODE_ENV !== "production";
 
-const buildCsp = () => {
+const buildCsp = (nonce) => {
   // Dev mode butuh 'unsafe-eval' untuk Next.js HMR source maps
+  // Production: pakai nonce supaya tidak perlu 'unsafe-inline'
   const scriptSrc = isDev
     ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://static.cloudflareinsights.com"
-    : "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com";
+    : nonce
+      ? `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' https://static.cloudflareinsights.com`
+      : "script-src 'self' https://static.cloudflareinsights.com";
 
   // Dev butuh ws:// untuk webpack HMR websocket
   const connectSrc = isDev
@@ -44,6 +47,7 @@ const buildCsp = () => {
     "default-src 'self'",
     scriptSrc,
     // Google Fonts CSS + font files (dipakai di globals.css)
+    // style-src tetap butuh 'unsafe-inline' untuk inline styles React/Next.js
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' data: https://fonts.gstatic.com",
     // Favicon & OG image dari CDN
@@ -66,6 +70,9 @@ const nextConfig = {
   },
 
   async headers() {
+    // Nonce untuk static headers tidak bisa di-generate per-request di sini.
+    // CSP dengan nonce di-inject oleh middleware.ts per request.
+    // File ini hanya sebagai fallback kalau middleware tidak jalan (mis. static export).
     const csp = buildCsp();
 
     return [

@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { headers } from "next/headers";
 import "./globals.css";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import NavigationLoader from "@/components/NavigationLoader";
@@ -57,15 +58,17 @@ export const viewport: Viewport = {
   // maximumScale removed — blocks user zoom, fails accessibility audit
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
         <script
+          nonce={nonce}
           dangerouslySetInnerHTML={{
             __html: `(function(){try{var t=localStorage.getItem('theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}})();`,
           }}
@@ -76,7 +79,7 @@ export default function RootLayout({
           <NavigationLoader />
           {children}
         </ThemeProvider>
-        <script dangerouslySetInnerHTML={{ __html: `
+        <script nonce={nonce} dangerouslySetInnerHTML={{ __html: `
 (function () {
   var ALL = ['eq','sort','funnel','plus','trash','play','eye','pencil','upload','arrowup','chat','spin','pop','bounce','users','trend'];
 
