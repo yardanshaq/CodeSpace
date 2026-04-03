@@ -15,9 +15,10 @@ function generateNonce(): string {
 }
 
 function buildCsp(nonce: string): string {
+  // Hanya 'unsafe-inline' saat dev. Di production, ketat pakai nonce dan hash
   const scriptSrc = isDev
     ? `script-src 'self' 'unsafe-inline' 'unsafe-eval' https://static.cloudflareinsights.com https://vercel.live`
-    : `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' 'unsafe-inline' 'unsafe-eval' https://static.cloudflareinsights.com https://vercel.live`;
+    : `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' https://static.cloudflareinsights.com https://vercel.live`;
 
   const connectSrc = isDev
     ? "connect-src 'self' ws: wss: https://cloudflareinsights.com https://vercel.live"
@@ -69,22 +70,48 @@ function hasValidCookieFormat(token: string | undefined): boolean {
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  let res = NextResponse.next();
+  const ua = req.headers.get("user-agent") || "";
 
+  // 1. Tangani Scraper Dulu (Raw content, no CSP needed)
+  if (pathname === "/code") {
+    const id = req.nextUrl.searchParams.get("v");
+    if (id && !isSocialPreviewBot(ua) && isProgrammaticScraper(ua)) {
+      const rawUrl = req.nextUrl.clone();
+      rawUrl.pathname = `/snippet/${id}/raw`;
+      rawUrl.search = "";
+      return NextResponse.rewrite(rawUrl);
+    }
+  }
+
+  const snippetMatch = pathname.match(/^\/snippet\/([^/]+)$/);
+  if (snippetMatch) {
+    const id = snippetMatch[1];
+    if (!isSocialPreviewBot(ua) && isProgrammaticScraper(ua)) {
+      const rawUrl = req.nextUrl.clone();
+      rawUrl.pathname = `/snippet/${id}/raw`;
+      return NextResponse.rewrite(rawUrl);
+    }
+  }
+
+  // 2. Auth Checking
   if (pathname === "/users" || pathname.startsWith("/users/")) {
     const token = req.cookies.get(COOKIE_NAME)?.value;
     if (!hasValidCookieFormat(token)) {
       const url = req.nextUrl.clone();
       url.pathname = "/login";
       url.searchParams.set("callbackUrl", pathname);
-      res = NextResponse.redirect(url);
+      return NextResponse.redirect(url);
     }
-  } else if (pathname.startsWith("/api/admin")) {
+  }
+
+  if (pathname.startsWith("/api/admin")) {
     const token = req.cookies.get(COOKIE_NAME)?.value;
     if (!hasValidCookieFormat(token)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-  } else if (
+  }
+
+  if (
     pathname === "/post" || pathname.startsWith("/post/") ||
     pathname === "/settings" || pathname.startsWith("/settings/")
   ) {
@@ -93,38 +120,16 @@ export function middleware(req: NextRequest) {
       const url = req.nextUrl.clone();
       url.pathname = "/login";
       url.searchParams.set("callbackUrl", pathname);
-      res = NextResponse.redirect(url);
-    }
-  } else if (pathname === "/code") {
-    const id = req.nextUrl.searchParams.get("v");
-    if (id) {
-      const ua = req.headers.get("user-agent") || "";
-      if (!isSocialPreviewBot(ua) && isProgrammaticScraper(ua)) {
-        const rawUrl = req.nextUrl.clone();
-        rawUrl.pathname = `/snippet/${id}/raw`;
-        rawUrl.search = "";
-        res = NextResponse.rewrite(rawUrl);
-      }
-    }
-  } else {
-    const snippetMatch = pathname.match(/^\/snippet\/([^/]+)$/);
-    if (snippetMatch) {
-      const id = snippetMatch[1];
-      const ua = req.headers.get("user-agent") || "";
-      if (!isSocialPreviewBot(ua) && isProgrammaticScraper(ua)) {
-        const rawUrl = req.nextUrl.clone();
-        rawUrl.pathname = `/snippet/${id}/raw`;
-        res = NextResponse.rewrite(rawUrl);
-      }
+      return NextResponse.redirect(url);
     }
   }
 
-  if (res.status !== 401) {
-    const nonce = generateNonce();
-    const csp = buildCsp(nonce);
-    res.headers.set("Content-Security-Policy", csp);
-    res.headers.set("x-nonce", nonce);
-  }
+  // 3. Inject CSP ke semua HTML Response
+  const nonce = generateNonce();
+  const csp = buildCsp(nonce);
+  const res = NextResponse.next();
+  res.headers.set("Content-Security-Policy", csp);
+  res.headers.set("x-nonce", nonce);
 
   return res;
 }
