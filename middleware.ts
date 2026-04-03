@@ -15,10 +15,10 @@ function generateNonce(): string {
 }
 
 function buildCsp(nonce: string): string {
-  // Hanya 'unsafe-inline' saat dev. Di production, ketat pakai nonce dan hash
+  // Hanya 'unsafe-inline' saat dev. Di production, ketat pakai nonce dan strict-dynamic
   const scriptSrc = isDev
     ? `script-src 'self' 'unsafe-inline' 'unsafe-eval' https://static.cloudflareinsights.com https://vercel.live`
-    : `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' https://static.cloudflareinsights.com https://vercel.live`;
+    : `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' 'unsafe-inline' 'unsafe-eval' https://static.cloudflareinsights.com https://vercel.live`;
 
   const connectSrc = isDev
     ? "connect-src 'self' ws: wss: https://cloudflareinsights.com https://vercel.live"
@@ -31,6 +31,8 @@ function buildCsp(nonce: string): string {
     "font-src 'self' data: https://fonts.gstatic.com",
     "img-src 'self' data: blob: https://cdn.nekohime.site",
     connectSrc,
+    "frame-src 'self' https://vercel.live", // Izinkan iframe Vercel
+    "child-src 'self' https://vercel.live", // Backup untuk browser tipe tertentu
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
