@@ -8,6 +8,7 @@ export const metadata: Metadata = {
   metadataBase: new URL("https://codespace.yardansh.com"),
   title: "CodeSpace",
   description: "A code snippet sharing platform",
+  keywords: ["code snippet", "code sharing", "codespace", "programming", "developer tools", "codespace yardansh"],
   verification: {
     google: "h75wZ6VzLYZfGhIiDkfQekWaBwC6s19N1NHynZNOgg4",
   },
