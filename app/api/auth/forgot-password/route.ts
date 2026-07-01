@@ -129,7 +129,7 @@ export async function POST(req: NextRequest) {
           <table role="presentation" cellpadding="0" cellspacing="0">
             <tr>
               <td>
-                <img src="https://cloud.yardansh.com/8MCWUj.png" alt="CodeSpace" width="40" height="40"
+                <img src="https://cloud.yardansh.com/8MCWUj.png?raw=1" alt="CodeSpace" width="40" height="40"
                   style="display:block;width:40px;height:40px;border-radius:10px;border:0;">
               </td>
               <td style="padding-left:10px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:17px;font-weight:700;color:#f0f0f0;letter-spacing:0.1em;">
@@ -149,7 +149,7 @@ export async function POST(req: NextRequest) {
               <table role="presentation" cellpadding="0" cellspacing="0">
                 <tr>
                   <td style="vertical-align:middle;">
-                    <img src="https://cloud.yardansh.com/8MCWUj.png" alt="CS" width="48" height="48"
+                    <img src="https://cloud.yardansh.com/8MCWUj.png?raw=1" alt="CS" width="48" height="48"
                       style="display:block;width:48px;height:48px;border-radius:11px;border:1.5px solid #2e4444;">
                   </td>
                   <td style="padding-left:16px;vertical-align:middle;">

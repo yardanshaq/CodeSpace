@@ -39,7 +39,7 @@ export function startNavigationLoader() {
       #cs-nav-overlay span:nth-child(2) { animation-delay:0.2s; }
       #cs-nav-overlay span:nth-child(3) { animation-delay:0.4s; }
     </style>
-    <img src="https://cloud.yardansh.com/mQPrTn.png"
+    <img src="https://cloud.yardansh.com/mQPrTn.png?raw=1"
       width="52" height="52"
       style="border-radius:12px;display:block;${isDark ? "filter:invert(1)" : ""}"
     />

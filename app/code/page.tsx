@@ -38,7 +38,7 @@ export async function generateMetadata({
         siteName:    "CodeSpace",
         type:        "website",
         images: [{
-          url:    "https://cloud.yardansh.com/iwuopD.png",
+          url:    "https://cloud.yardansh.com/iwuopD.png?raw=1",
           width:  1280,
           height: 640,
           alt:    snippet.title,
@@ -48,7 +48,7 @@ export async function generateMetadata({
         card:        "summary_large_image",
         title:       snippet.title,
         description: desc,
-        images:      ["https://cloud.yardansh.com/iwuopD.png"],
+        images:      ["https://cloud.yardansh.com/iwuopD.png?raw=1"],
       },
     };
   } catch {
