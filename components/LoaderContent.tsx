@@ -4,7 +4,7 @@ export default function LoaderContent({ timedOut = false }: { timedOut?: boolean
   return (
     <>
       <img
-        src="https://cdn.nekohime.site/file/sOyPp0Jp.png"
+        src="https://cloud.yardansh.com/mQPrTn.png"
         alt="CS"
         width={52}
         height={52}

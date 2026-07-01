@@ -2,7 +2,7 @@
 
 <div align="center">
 
-<img src="https://cdn.nekohime.site/file/sOyPp0Jp.png" alt="CodeSpace" width="80" height="80" style="border-radius:16px;" />
+<img src="https://cloud.yardansh.com/mQPrTn.png" alt="CodeSpace" width="80" height="80" style="border-radius:16px;" />
 
 # cs
 
@@ -326,6 +326,6 @@ Deploy to Vercel: push to GitHub → import at vercel.com → add env vars → d
 ---
 
 <div align="center">
-  <img src="https://cdn.nekohime.site/file/sOyPp0Jp.png" alt="CS" width="32" height="32" style="border-radius:6px;vertical-align:middle;" />
+  <img src="https://cloud.yardansh.com/mQPrTn.png" alt="CS" width="32" height="32" style="border-radius:6px;vertical-align:middle;" />
   &nbsp; Made with ☕ by <a href="https://github.com/yardanshaq">yardanshaq</a>
 </div>

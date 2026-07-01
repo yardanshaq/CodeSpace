@@ -26,7 +26,7 @@ function buildCsp(nonce: string): string {
     scriptSrc,
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",  // ← kembali tanpa nonce
     "font-src 'self' data: https://fonts.gstatic.com",
-    "img-src 'self' data: blob: https://cdn.nekohime.site",
+    "img-src 'self' data: blob: https://cloud.yardansh.com",
     connectSrc,
     "object-src 'none'",
     "base-uri 'self'",

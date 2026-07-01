@@ -23,7 +23,7 @@ export const metadata: Metadata = {
     siteName: "CodeSpace",
     images: [
       {
-        url: "https://cdn.nekohime.site/file/E_fVqMJ-.png",
+        url: "https://cloud.yardansh.com/iwuopD.png",
         width: 1280,
         height: 640,
         alt: "CodeSpace Cover",
@@ -36,16 +36,16 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "CodeSpace",
     description: "A code snippet sharing platform",
-    images: ["https://cdn.nekohime.site/file/E_fVqMJ-.png"],
+    images: ["https://cloud.yardansh.com/iwuopD.png"],
   },
   icons: {
     icon: [
-      { url: "https://cdn.nekohime.site/file/1_6Wo0X-.png" },
-      { url: "https://cdn.nekohime.site/file/nMZIBy7P.png", sizes: "16x16", type: "image/png" },
-      { url: "https://cdn.nekohime.site/file/dtbHw_6g.png", sizes: "32x32", type: "image/png" },
+      { url: "https://cloud.yardansh.com/8MCWUj.png", sizes: "512x512", type: "image/png" },
+      { url: "https://cloud.yardansh.com/4DFPLf.png", sizes: "16x16", type: "image/png" },
+      { url: "https://cloud.yardansh.com/qdmgQP.png", sizes: "32x32", type: "image/png" },
     ],
     apple: [
-      { url: "https://cdn.nekohime.site/file/E4zGn2Ro.png", sizes: "180x180" },
+      { url: "https://cloud.yardansh.com/x1WVKi.png", sizes: "180x180" },
     ],
   },
   alternates: {

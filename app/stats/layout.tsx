@@ -10,7 +10,7 @@ export const metadata: Metadata = {
     siteName: "CodeSpace",
     images: [
       {
-        url: "https://cdn.nekohime.site/file/E_fVqMJ-.png",
+        url: "https://cloud.yardansh.com/iwuopD.png",
         width: 1280,
         height: 640,
         alt: "CodeSpace Cover",
@@ -23,7 +23,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Server Status — CodeSpace",
     description: "Real-time server status, database latency, hardware stats, and activity metrics for CodeSpace.",
-    images: ["https://cdn.nekohime.site/file/E_fVqMJ-.png"],
+    images: ["https://cloud.yardansh.com/iwuopD.png"],
   },
 };
 
