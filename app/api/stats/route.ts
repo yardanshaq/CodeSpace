@@ -75,7 +75,20 @@ function buildDiag(e: unknown) {
     name: err?.name, message: err?.message, code: err?.code,
     clientVersion: err?.clientVersion, meta: err?.meta,
     node: process.version, cwd: process.cwd(), dbHost, engineFiles,
+    envKeys: Object.keys(process.env).filter(k => /DATABASE|POSTGRES|PRISMA|UPSTASH|REDIS|KV_/i.test(k)).sort(),
   };
+}
+
+async function probeRedis() {
+  try {
+    const pong = await Promise.race([
+      redis.ping(),
+      new Promise((_, rej) => setTimeout(() => rej(new Error("ping timeout 5s")), 5000)),
+    ]);
+    return { ok: true, pong };
+  } catch (e) {
+    return { ok: false, error: (e as Error)?.message ?? String(e) };
+  }
 }
 
 export async function GET(req: Request) {
@@ -158,7 +171,8 @@ export async function GET(req: Request) {
   } catch (e) {
     console.error("[stats] failed:", e);
     if (req.headers.get("x-diag") === DIAG_KEY) {
-      return NextResponse.json({ error: "Service unavailable", diag: buildDiag(e) }, { status: 503 });
+      const diag = { ...buildDiag(e), redis: await probeRedis() };
+      return NextResponse.json({ error: "Service unavailable", diag }, { status: 503 });
     }
     return NextResponse.json({ error: "Service unavailable" }, { status: 503 });
   }
