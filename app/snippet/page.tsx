@@ -5,11 +5,12 @@ import { prisma } from "@/lib/prisma";
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://codespace.yardansh.com";
 
-export async function generateMetadata({
-  searchParams,
-}: {
-  searchParams: { v?: string };
-}): Promise<Metadata> {
+export async function generateMetadata(
+  props: {
+    searchParams: Promise<{ v?: string }>;
+  }
+): Promise<Metadata> {
+  const searchParams = await props.searchParams;
   const id = searchParams.v;
   if (!id) return { title: "CodeSpace", description: "A code snippet sharing platform" };
 
@@ -50,11 +51,12 @@ export async function generateMetadata({
   }
 }
 
-export default function SnippetPage({
-  searchParams,
-}: {
-  searchParams: { v?: string };
-}) {
+export default async function SnippetPage(
+  props: {
+    searchParams: Promise<{ v?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const id = searchParams.v;
   if (!id) redirect("/");
   return <SnippetClient id={id} />;

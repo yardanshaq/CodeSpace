@@ -41,10 +41,8 @@ async function getStats(snippetId: string) {
   return stats;
 }
 
-export async function GET(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const snippetId = params.id;
 
   const encoder = new TextEncoder();

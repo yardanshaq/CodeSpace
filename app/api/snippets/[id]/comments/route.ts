@@ -42,10 +42,8 @@ function sanitizeText(input: string): string {
 }
 
 // ── GET — list all comments for a snippet ─────────────────────────────────────
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const comments = await prisma.comment.findMany({
       where: { snippetId: params.id },
@@ -60,10 +58,8 @@ export async function GET(
 }
 
 // ── POST — add a comment (requires auth) ─────────────────────────────────────
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const session = await getSession();
     if (!session) {

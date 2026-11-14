@@ -6,10 +6,8 @@ import { redis } from "@/lib/redis";
 export const dynamic = "force-dynamic";
 
 // GET — fetch like count + whether current user has liked
-export async function GET(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const session = await getSession();
     const snippetId = params.id;
@@ -32,10 +30,8 @@ export async function GET(
 }
 
 // POST — toggle like (requires auth)
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const session = await getSession();
     if (!session) {

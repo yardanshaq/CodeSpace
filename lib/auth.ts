@@ -36,7 +36,7 @@ export async function createSession(
 }
 
 export async function getSession(): Promise<SessionPayload | null> {
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const rawToken    = cookieStore.get(COOKIE_NAME)?.value;
   if (!rawToken || rawToken.length !== 64) return null;
 
@@ -71,7 +71,7 @@ export async function getSession(): Promise<SessionPayload | null> {
 }
 
 export async function deleteSession(): Promise<void> {
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const rawToken    = cookieStore.get(COOKIE_NAME)?.value;
   if (!rawToken) return;
   const hashedToken = hashToken(rawToken);

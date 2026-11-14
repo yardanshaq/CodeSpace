@@ -4,7 +4,7 @@ export default function LoaderContent({ timedOut = false }: { timedOut?: boolean
   return (
     <>
       <img
-        src="https://cloud.yardansh.com/mQPrTn.png?raw=1"
+        src="/logo.png"
         alt="CS"
         width={52}
         height={52}

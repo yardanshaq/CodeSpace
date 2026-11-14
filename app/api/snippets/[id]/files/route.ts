@@ -69,10 +69,8 @@ async function getFileMeta(fileId: string) {
 }
 
 // GET — list files attached to a snippet
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const snippet = await resolveSnippet(params.id);
   if (!snippet) {
     return NextResponse.json({ error: "Snippet not found" }, { status: 404 });
@@ -93,10 +91,8 @@ export async function GET(
 }
 
 // POST — upload and attach a file to a snippet
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -191,10 +187,8 @@ export async function POST(
 }
 
 // DELETE — remove a file from the snippet and from Redis
-export async function DELETE(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

@@ -9,12 +9,21 @@ export const dynamic = "force-dynamic";
 const SERVER_START_KEY = "codespace:server_start";
 const REQ_COUNTER_KEY  = "codespace:req_counter";
 
+// Fallback start time kalau Redis tidak tersedia: pakai uptime proses.
+const PROCESS_START = Date.now() - Math.floor(process.uptime() * 1000);
+
 async function getOrSetStartTime(): Promise<number> {
-  const existing = await redis.get<number>(SERVER_START_KEY);
-  if (existing) return existing;
-  const now = Date.now();
-  await redis.set(SERVER_START_KEY, now);
-  return now;
+  try {
+    const existing = await redis.get<number>(SERVER_START_KEY);
+    if (existing) return existing;
+    const now = Date.now();
+    await redis.set(SERVER_START_KEY, now);
+    return now;
+  } catch (e) {
+    // Redis opsional: dashboard tetap tampil walau Redis down.
+    console.error("[stats] redis start-time failed:", e);
+    return PROCESS_START;
+  }
 }
 
 let cachedRegion: string | null = null;
@@ -42,7 +51,14 @@ async function fetchRegionFromIP(): Promise<string> {
 
 export async function GET() {
   try {
-    const reqCount = await redis.incr(REQ_COUNTER_KEY);
+    // Counter request bersifat nice-to-have. Kalau Redis gagal (env hilang,
+    // token expired, kuota habis), jangan gagalkan seluruh dashboard.
+    let reqCount = 0;
+    try {
+      reqCount = await redis.incr(REQ_COUNTER_KEY);
+    } catch (e) {
+      console.error("[stats] redis incr failed:", e);
+    }
 
     const pingStart = Date.now();
     await prisma.$queryRaw`SELECT 1`;
@@ -67,7 +83,11 @@ export async function GET() {
 
     const uptimeSeconds = Math.floor((Date.now() - startTime) / 1000);
 
-    await redis.set(REQ_COUNTER_KEY, 0);
+    try {
+      await redis.set(REQ_COUNTER_KEY, 0);
+    } catch (e) {
+      console.error("[stats] redis reset failed:", e);
+    }
 
     const mem     = process.memoryUsage();
     const total   = os.totalmem();
@@ -106,7 +126,8 @@ export async function GET() {
         "X-Robots-Tag":  "noindex",
       },
     });
-  } catch {
+  } catch (e) {
+    console.error("[stats] failed:", e);
     return NextResponse.json({ error: "Service unavailable" }, { status: 503 });
   }
 }

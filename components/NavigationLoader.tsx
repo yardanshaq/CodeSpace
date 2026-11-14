@@ -1,8 +1,12 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+import { usePathname, useRouter } from "next/navigation";
 
 const OVERLAY_ID = "cs-nav-overlay";
+const OVERLAY_MAX_MS = 12000;
+
+let overlayTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function startNavigationLoader() {
   if (document.getElementById(OVERLAY_ID)) return;
@@ -39,7 +43,7 @@ export function startNavigationLoader() {
       #cs-nav-overlay span:nth-child(2) { animation-delay:0.2s; }
       #cs-nav-overlay span:nth-child(3) { animation-delay:0.4s; }
     </style>
-    <img src="https://cloud.yardansh.com/mQPrTn.png?raw=1"
+    <img src="/logo.png"
       width="52" height="52"
       style="border-radius:12px;display:block;${isDark ? "filter:invert(1)" : ""}"
     />
@@ -50,9 +54,18 @@ export function startNavigationLoader() {
     </div>
   `;
   document.body.appendChild(el);
+
+  // Safety net: navigasi yang gagal/nyangkut tidak boleh meninggalkan
+  // overlay full-screen permanen.
+  if (overlayTimer) clearTimeout(overlayTimer);
+  overlayTimer = setTimeout(stopNavigationLoader, OVERLAY_MAX_MS);
 }
 
 export function stopNavigationLoader() {
+  if (overlayTimer) {
+    clearTimeout(overlayTimer);
+    overlayTimer = null;
+  }
   document.getElementById(OVERLAY_ID)?.remove();
 }
 
@@ -65,5 +78,13 @@ export function useNavigate() {
 }
 
 export default function NavigationLoader() {
+  const pathname = usePathname();
+
+  // Route sudah commit -> overlay pasti dilepas, termasuk kasus navigasi
+  // instan dari prefetch cache di mana loading.tsx tidak sempat dirender.
+  useEffect(() => {
+    stopNavigationLoader();
+  }, [pathname]);
+
   return null;
 }

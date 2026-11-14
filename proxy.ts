@@ -73,7 +73,7 @@ function hasValidCookieFormat(token: string | undefined): boolean {
   return typeof token === "string" && /^[0-9a-f]{64}$/.test(token);
 }
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // Generate nonce di awal — dipakai untuk SEMUA response

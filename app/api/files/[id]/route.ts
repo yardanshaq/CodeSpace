@@ -21,10 +21,8 @@ function safeDisposition(name: string, inline: boolean): string {
   return `${inline ? "inline" : "attachment"}; filename="${safe}"`;
 }
 
-export async function GET(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     // Validate fileId format first — prevents Redis key injection
     if (!isValidFileId(params.id)) {

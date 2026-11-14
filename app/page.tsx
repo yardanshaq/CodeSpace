@@ -248,6 +248,14 @@ export default function HomePage() {
     return () => clearTimeout(timer);
   }, [fetchSnippets]);
 
+  // Prefetch halaman yang paling sering dibuka dari home supaya navigasi
+  // tidak menunggu RSC payload baru.
+  useEffect(() => {
+    ["/trending", "/feedback", "/post", "/login", "/stats"].forEach(href => {
+      router.prefetch(href);
+    });
+  }, [router]);
+
   useEffect(() => {
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = setInterval(() => fetchSnippets(true), 10000);
