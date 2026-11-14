@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { redis } from "@/lib/redis";
 import os from "os";
+import path from "path";
+import fs from "fs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -49,7 +51,34 @@ async function fetchRegionFromIP(): Promise<string> {
   return cachedRegion;
 }
 
-export async function GET() {
+// TEMP DIAG (dihapus setelah root cause ketemu): aktif hanya dengan header
+// x-diag yang cocok, supaya detail error tidak bocor ke publik.
+const DIAG_KEY = "b7f2c9e14a6d48d0a3f5e2c8176b9d4c";
+
+function buildDiag(e: unknown) {
+  const err = e as { name?: string; message?: string; code?: string; clientVersion?: string; meta?: unknown };
+  let engineFiles: string[] = [];
+  try {
+    const dir = path.join(process.cwd(), "node_modules", ".prisma", "client");
+    engineFiles = fs.readdirSync(dir).filter(f => /engine|\.node$|\.wasm$/i.test(f));
+  } catch { engineFiles = ["<readdir failed>"]; }
+
+  let dbHost = "<unset>";
+  try {
+    if (process.env.DATABASE_URL) {
+      const u = new URL(process.env.DATABASE_URL);
+      dbHost = `${u.hostname}:${u.port || "5432"} db=${u.pathname.replace(/^\//, "")}`;
+    }
+  } catch { dbHost = "<invalid url>"; }
+
+  return {
+    name: err?.name, message: err?.message, code: err?.code,
+    clientVersion: err?.clientVersion, meta: err?.meta,
+    node: process.version, cwd: process.cwd(), dbHost, engineFiles,
+  };
+}
+
+export async function GET(req: Request) {
   try {
     // Counter request bersifat nice-to-have. Kalau Redis gagal (env hilang,
     // token expired, kuota habis), jangan gagalkan seluruh dashboard.
@@ -128,6 +157,9 @@ export async function GET() {
     });
   } catch (e) {
     console.error("[stats] failed:", e);
+    if (req.headers.get("x-diag") === DIAG_KEY) {
+      return NextResponse.json({ error: "Service unavailable", diag: buildDiag(e) }, { status: 503 });
+    }
     return NextResponse.json({ error: "Service unavailable" }, { status: 503 });
   }
 }
