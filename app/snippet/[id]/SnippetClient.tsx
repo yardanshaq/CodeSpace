@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import PageLoader from "@/components/PageLoader";
 import Navbar from "@/components/Navbar";
+import { useRealtime } from "@/lib/useRealtime";
 
 interface GlobalFile {
   id: string;
@@ -302,6 +303,29 @@ export default function SnippetClient({ id, initialData }: { id: string; initial
   useEffect(() => {
     if (userChecked && id) fetchBundle(true);
   }, [userChecked, fetchBundle, id]);
+
+  // Realtime global: like/comment dari user lain langsung terlihat di sini,
+  // termasuk isi komentar baru (bukan cuma jumlahnya).
+  const liveSnippetId = useRef<string | null>(null);
+  useEffect(() => {
+    liveSnippetId.current = snippet?.id ?? null;
+  }, [snippet?.id]);
+
+  useRealtime((event) => {
+    const snippetId = liveSnippetId.current;
+    if (!snippetId) return;
+    if (event.snippetId && event.snippetId !== snippetId) return;
+
+    if (event.type === "like") {
+      fetchLikes(true);
+    } else if (event.type === "comment.created" || event.type === "comment.deleted") {
+      fetchComments(true);
+    } else if (event.type === "snippet.updated") {
+      fetchBundle(!!user);
+    } else if (event.type === "snippet.deleted") {
+      router.push("/");
+    }
+  });
 
   useEffect(() => {
     if (!id || hasTracked.current) return;

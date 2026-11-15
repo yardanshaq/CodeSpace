@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { redis } from "@/lib/redis";
+import { publishEvent } from "@/lib/events";
 
 export const dynamic = "force-dynamic";
 
@@ -62,6 +63,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     try {
       await redis.del(`sse:stats:${snippetId}`);
     } catch { /* non-fatal */ }
+
+    await publishEvent("like", { snippetId, count, liked: !existing });
 
     return NextResponse.json({ liked: !existing, count });
   } catch (error) {

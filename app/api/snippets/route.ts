@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { redis } from "@/lib/redis";
+import { publishEvent } from "@/lib/events";
 
 async function checkSnippetRateLimit(ip: string): Promise<{ allowed: boolean; retryAfter: number }> {
   const key = `ratelimit:post-snippet:${ip}`;
@@ -169,6 +170,13 @@ export async function POST(req: NextRequest) {
         admin:     { select: { username: true } },
         _count:    { select: { likes: true, comments: true } },
       },
+    });
+
+    await publishEvent("snippet.created", {
+      snippetId: snippet.id,
+      title:     snippet.title,
+      category:  snippet.category,
+      author:    snippet.admin.username,
     });
 
     return NextResponse.json(

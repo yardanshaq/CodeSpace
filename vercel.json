@@ -11,6 +11,9 @@
     },
     "app/api/snippets/[id]/sse/route.ts": {
       "maxDuration": 60
+    },
+    "app/api/events/sse/route.ts": {
+      "maxDuration": 60
     }
   },
   "build": {

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useNavigate } from "@/components/NavigationLoader";
 import Navbar from "@/components/Navbar";
 import PageLoader from "@/components/PageLoader";
+import { useRealtime } from "@/lib/useRealtime";
 
 interface Snippet {
   id: string;
@@ -256,11 +257,41 @@ export default function HomePage() {
     });
   }, [router]);
 
+  // Realtime: post/like/comment baru langsung masuk tanpa refresh.
+  // Refresh di-debounce supaya burst event (mis. 5 like sekaligus) hanya
+  // memicu satu kali fetch.
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleRefresh = useCallback(() => {
+    if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    refreshTimer.current = setTimeout(() => {
+      refreshTimer.current = null;
+      fetchSnippets(true);
+    }, 700);
+  }, [fetchSnippets]);
+
+  const realtimeConnected = useRealtime(event => {
+    if (
+      event.type === "snippet.created" ||
+      event.type === "snippet.updated" ||
+      event.type === "snippet.deleted" ||
+      event.type === "like" ||
+      event.type === "comment.created" ||
+      event.type === "comment.deleted"
+    ) {
+      scheduleRefresh();
+    }
+  });
+
   useEffect(() => {
     if (pollRef.current) clearInterval(pollRef.current);
-    pollRef.current = setInterval(() => fetchSnippets(true), 10000);
+    const interval = realtimeConnected ? 30000 : 10000;
+    pollRef.current = setInterval(() => fetchSnippets(true), interval);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [fetchSnippets]);
+  }, [fetchSnippets, realtimeConnected]);
+
+  useEffect(() => () => {
+    if (refreshTimer.current) clearTimeout(refreshTimer.current);
+  }, []);
 
   useEffect(() => {
     if (!gridRef.current) return;

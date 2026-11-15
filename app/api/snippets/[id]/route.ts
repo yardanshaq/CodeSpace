@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { redis } from "@/lib/redis";
+import { publishEvent } from "@/lib/events";
 export const dynamic = "force-dynamic";
 
 async function getSnippetFiles(snippetId: string) {
@@ -133,6 +134,14 @@ export async function PUT(req: NextRequest, props: { params: Promise<{ id: strin
       },
       include: { admin: { select: { username: true } } },
     });
+
+    await publishEvent("snippet.updated", {
+      snippetId: updated.id,
+      title:     updated.title,
+      category:  updated.category,
+      isPublic:  updated.isPublic,
+    });
+
     return NextResponse.json({
       ...updated,
       attachments: await getSnippetFiles(updated.id),
@@ -170,6 +179,9 @@ export async function DELETE(req: NextRequest, props: { params: Promise<{ id: st
     } catch { /* non-fatal */ }
 
     await prisma.snippet.delete({ where: { id: snippet.id } });
+
+    await publishEvent("snippet.deleted", { snippetId: snippet.id });
+
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error(error);
