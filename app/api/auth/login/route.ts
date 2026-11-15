@@ -58,15 +58,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
     }
 
-    const superUsername = process.env.SUPERADMIN_USERNAME;
+    // Bootstrap superadmin bersifat opsional. Kalau env-nya tidak di-set,
+    // login akun yang sudah ada di DB harus tetap jalan (jangan 500).
+    const superUsername = process.env.SUPERADMIN_USERNAME?.trim();
     const superPassword = process.env.SUPERADMIN_PASSWORD;
-    if (!superUsername || !superPassword) {
-      return NextResponse.json({ error: "Server misconfiguration" }, { status: 500 });
-    }
 
     let dbAdmin = await prisma.admin.findUnique({ where: { username } });
 
-    if (!dbAdmin && username === superUsername && password === superPassword) {
+    if (!dbAdmin && superUsername && superPassword && username === superUsername && password === superPassword) {
       const hashed = await bcrypt.hash(superPassword, 12);
       dbAdmin = await prisma.admin.create({
         data: { username: superUsername, password: hashed, role: "SUPERADMIN" },
