@@ -43,6 +43,43 @@ function sanitizeText(input: string): string {
 }
 
 // ── GET — list all comments for a snippet ─────────────────────────────────────
+export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
+  try {
+    const session = await getSession();
+    if (!session) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const comment = await prisma.comment.findUnique({
+      where: { id: params.id },
+      select: { id: true, userId: true, snippetId: true },
+    });
+    if (!comment) {
+      return NextResponse.json({ error: "Comment not found" }, { status: 404 });
+    }
+    if (session.role !== "SUPERADMIN" && comment.userId !== session.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    await prisma.comment.delete({ where: { id: comment.id } });
+
+    try {
+      await redis.del(`sse:stats:${comment.snippetId}`);
+    } catch { /* non-fatal */ }
+
+    await publishEvent("comment.deleted", {
+      snippetId:  comment.snippetId,
+      commentId:  comment.id,
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error(error);
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
+  }
+}
+
 export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
